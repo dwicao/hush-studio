@@ -1,0 +1,10 @@
+.gradle/
+.gradle-home/
+local.properties
+**/build/
+**/.cxx/
+*.gguf
+*.wav
+
+.kotlin/
+.DS_Store
