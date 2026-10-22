@@ -56,7 +56,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
     std::lock_guard<std::mutex> lock(synthesis_mutex);
     cancel_requested.store(false);
     std::vector<std::string> args = {"voxstudio", "--model-path", utf8(env,model), "--text", utf8(env,text),
-        "--output", utf8(env,output), "--backend", "cpu", "--threads", std::to_string(threads),
+        "--output", utf8(env,output), "--backend",
+#ifdef VOX_MOBILE_GPU
+        "vulkan",
+#else
+        "cpu",
+#endif
+ "--threads", std::to_string(threads),
         "--inference-timesteps", std::to_string(steps)};
     if (env->ExceptionCheck()) return nullptr;
     if (reference && !utf8(env,reference).empty()) {
@@ -82,6 +88,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
         const std::string log = diagnostics.str();
         const size_t pos = log.rfind("Error:");
         std::string message = pos == std::string::npos ? "Model could not generate audio. Check the model and reference WAV." : log.substr(pos);
+#ifdef VOX_MOBILE_GPU
+        std::istringstream lines(log);
+        std::string line;
+        while (std::getline(lines,line)) {
+            if (line.find("ggml_vulkan:") != std::string::npos) message += "\n" + line;
+        }
+#endif
         for (char& c : message) if (static_cast<unsigned char>(c) > 127) c = '?';
         return env->NewStringUTF(message.c_str());
     }

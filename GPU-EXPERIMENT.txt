@@ -1,0 +1,27 @@
+Android Vulkan experiment — 22 October 2026
+Baseline commit: 4a9a86e (Vox Studio 0.1.11 CPU).
+
+Build with -PmobileFast=true -PmobileGpu=true. Experimental flag forces Vulkan;
+CPU remains the default build. Use direct native instrumentation for benchmarks,
+not normal app generation (which can reuse previously cached CPU audio).
+
+Dependencies: Android NDK 28.2.13676358 bundled host glslc; Vulkan-Headers
+v1.4.321 extracted into ../../work/vulkan/Vulkan-Headers-1.4.321 relative to this
+project. Archive: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.321.tar.gz
+SHA256: 7c1874f9186d9e7d5245e279cdccaa77a66ed8f52871b428630aeb771dc7623c
+Current host configuration is macOS; shader compiler path uses darwin-x86_64.
+
+Results: GPU build succeeded. Physical Moto G71 Android 12 advertises Vulkan
+1.1 (4198400) and compute support. Native benchmark initialization failed:
+  ggml_vulkan: Error: Vulkan 1.2 required.
+This is a loader/API compatibility failure before inference, not a performance
+result. Do not remove the version guard: newer Vulkan feature and shader
+contracts require a deliberate compatibility implementation and validation.
+No weights, state ownership, tensor layouts or inference operators were changed.
+Boundary audit completed; existing shared WeightStore and runtime paths retained.
+CPU app restored afterward. No GPU speed or output-quality claim.
+
+Next investigation: query individual device extensions/features and determine
+whether a Vulkan 1.1-compatible backend port is feasible; alternatively assess
+an Android-supported OpenCL/Qualcomm path. Either needs backend/operator coverage
+validation. A Snapdragon label alone does not guarantee this Vulkan runtime works.

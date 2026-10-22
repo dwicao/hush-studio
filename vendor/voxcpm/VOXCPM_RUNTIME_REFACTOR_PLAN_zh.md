@@ -567,3 +567,5 @@ enum class BufferUsage {
 - `docs/voxcpm_cpp_backend.md`
 
 如果后续实现与这些文档发生偏离，必须优先更新计划和契约说明，再继续写代码。
+
+- 2026-10-22 Android experiment: app wrapper enables existing Vulkan backend without modifying tensor/operator or shared WeightStore contracts. Build passed; Moto G71 loader rejected because Vulkan 1.2 is required. CPU remains default; see ../../GPU-EXPERIMENT.txt. No GPU performance claim.
