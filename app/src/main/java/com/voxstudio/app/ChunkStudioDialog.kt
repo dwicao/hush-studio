@@ -1,142 +1,249 @@
 package com.voxstudio.app
 
 import android.app.*
-import android.graphics.Color
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.*
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import java.io.File
 
-/** Paragraph-oriented studio with selected-chunk actions and a pinned transport. */
+/**
+ * Paragraph-oriented studio. Each chunk carries its own actions when selected; the bottom bar holds
+ * either generation progress or the primary "generate remaining" action, above a pinned player.
+ */
 class ChunkStudioDialog(private val activity: Activity,private val dir: File,
     private val startTask: (String,(android.content.Context)->Unit)->Unit,
-    private val export: ()->Unit): Dialog(activity,android.R.style.Theme_Material_Light_NoActionBar) {
-    private val ink=Color.rgb(20,20,22);private val muted=Color.rgb(110,113,120)
-    private val blue=Color.rgb(221,235,255);private val border=Color.rgb(231,232,236)
+    private val export: ()->Unit,private val autoGenerate: Boolean=false): Dialog(activity,android.R.style.Theme_Material_NoActionBar) {
     private val store=StudioStore(activity)
     private val handler=Handler(Looper.getMainLooper())
     private var selected=0;private var loaded=-1;private var playingAll=false;private var revision=""
     private lateinit var document: LinearLayout;private lateinit var scroll: ScrollView
-    private lateinit var edit: Button
-    private lateinit var action: Button;private lateinit var play: Button;private lateinit var all: Button;private lateinit var exportButton: Button
-    private lateinit var generationProgress: ProgressBar
-    private lateinit var state: TextView;private lateinit var position: TextView;private lateinit var seek: SeekBar;private lateinit var stop: Button
+    private lateinit var subtitle: TextView;private lateinit var exportButton: Button
+    private lateinit var progressBox: LinearLayout;private lateinit var progressTitle: TextView;private lateinit var progressDetail: TextView
+    private lateinit var generationProgress: ProgressBar;private lateinit var stop: Button
+    private lateinit var primary: Button;private lateinit var notice: TextView
+    private lateinit var play: ImageButton;private lateinit var previous: ImageButton;private lateinit var next: ImageButton
+    private lateinit var speed: Button;private lateinit var position: TextView;private lateinit var seek: SeekBar
     private var dragging=false
     private val audio=AudioPlayback(activity) { if(::play.isInitialized) refreshTransport() }
     private fun dp(n: Int)=(n*activity.resources.displayMetrics.density).toInt()
-    private fun shape(color: Int,radius: Int=12)=GradientDrawable().apply { setColor(color);cornerRadius=dp(radius).toFloat() }
-    private fun text(value: String,size: Float=14f,color: Int=ink)=TextView(activity).apply { this.text=value;textSize=size;setTextColor(color);setLineSpacing(dp(3).toFloat(),1f) }
-    private fun button(value: String,dark: Boolean=false,click: ()->Unit)=Button(activity).apply {
-        this.text=value;isAllCaps=false;textSize=13f;minWidth=0;minimumWidth=0
-        setTextColor(if(dark) Color.WHITE else ink);background=shape(if(dark) ink else Color.rgb(246,246,248))
-        setPadding(dp(8),0,dp(8),0);setOnClickListener { guard(click) }
+    private fun shape(color: Int,radius: Int=12,border: Int?=null,width: Int=1)=GradientDrawable().apply {
+        setColor(color);cornerRadius=dp(radius).toFloat();if(border!=null) setStroke(dp(width),border)
+    }
+    private fun text(value: String,size: Float=14f,color: Int=Palette.ink,bold: Boolean=false)=TextView(activity).apply {
+        this.text=value;textSize=size;setTextColor(color);setLineSpacing(dp(3).toFloat(),1f)
+        if(bold) typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+    }
+    private fun button(value: String,primary: Boolean=false,click: ()->Unit)=Button(activity).apply {
+        this.text=value;isAllCaps=false;textSize=14f;minWidth=0;minimumWidth=0;minHeight=dp(48);minimumHeight=dp(48)
+        typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+        setTextColor(if(primary) Palette.bg else Palette.ink);background=shape(if(primary) Palette.accent else Palette.raised)
+        setPadding(dp(14),dp(6),dp(14),dp(6));setOnClickListener { guard(click) }
+    }
+    private fun icon(res: Int,description: String,primary: Boolean=false,click: ()->Unit)=ImageButton(activity).apply {
+        setImageResource(res);contentDescription=description;scaleType=ImageView.ScaleType.CENTER
+        imageTintList=ColorStateList.valueOf(if(primary) Palette.bg else Palette.ink)
+        background=shape(if(primary) Palette.accent else Palette.raised,if(primary) 28 else 12)
+        setOnClickListener { guard(click) }
     }
     private fun row(parent: LinearLayout)=LinearLayout(activity).apply { gravity=Gravity.CENTER_VERTICAL;parent.addView(this,LinearLayout.LayoutParams(-1,-2)) }
-    private fun add(parent: LinearLayout,view: View,weight: Float=1f,height: Int=46) { parent.addView(view,LinearLayout.LayoutParams(0,dp(height),weight).apply { setMargins(dp(3),dp(3),dp(3),dp(3)) }) }
     private fun gap(parent: LinearLayout,n: Int=12) { parent.addView(Space(activity),LinearLayout.LayoutParams(1,dp(n))) }
     private fun meta()=store.metadata(dir)
     private fun parts()=meta().getJSONArray("sections")
     private fun file(index: Int)=File(dir,"section-$index.wav")
+    private fun missing()=(0 until parts().length()).filter { !file(it).isFile }
+    private fun ownsJob()=StudioJobs.busy && StudioJobs.chunkProject==dir.name
     private fun guard(task: ()->Unit) { try { task() } catch(e: Exception) { AlertDialog.Builder(activity).setTitle("Couldn't continue").setMessage(e.message).setPositiveButton("Close",null).show() } }
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
-        val root=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.WHITE) }
+        val root=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Palette.bg) }
         setContentView(root)
-        window?.apply { statusBarColor=Color.WHITE;navigationBarColor=Color.WHITE;decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR }
-        val header=row(root).apply { setPadding(dp(12),dp(8),dp(12),dp(8)) }
-        header.addView(button("‹") { dismiss() },LinearLayout.LayoutParams(dp(42),dp(46)))
-        header.addView(text(meta().getString("title"),17f).apply { maxLines=2;setPadding(dp(8),0,dp(8),0) },LinearLayout.LayoutParams(0,-2,1f))
-        exportButton=button("Export",true) { require(File(dir,"full.wav").isFile) { "Generate all chunks before exporting." };pause();export() }
-        header.addView(exportButton,LinearLayout.LayoutParams(dp(80),dp(46)))
-        val tools=row(root).apply { setPadding(dp(12),0,dp(12),dp(6)) }
-        action=button("Generate",true) { generate(listOf(selected),file(selected).isFile) };add(tools,action,1.35f)
-        edit=button("Edit text") { editChunk() };add(tools,edit)
-        all=button("Generate all") { generate((0 until parts().length()).filter { !file(it).isFile },false) };add(tools,all,1.3f)
+        window?.apply { statusBarColor=Palette.bg;navigationBarColor=Palette.bg }
+        val header=row(root).apply { setPadding(dp(8),dp(8),dp(16),dp(8)) }
+        header.addView(icon(R.drawable.ic_back,"Close studio") { dismiss() }.apply { background=null },LinearLayout.LayoutParams(dp(48),dp(48)))
+        val heading=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(4),0,dp(10),0) }
+        heading.addView(text(meta().getString("title"),18f,bold=true).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END })
+        subtitle=text("",12f,Palette.muted).also { heading.addView(it) }
+        header.addView(heading,LinearLayout.LayoutParams(0,-2,1f))
+        exportButton=button("Export") { requestExport() }
+        header.addView(exportButton,LinearLayout.LayoutParams(-2,-2))
+        root.addView(View(activity).apply { setBackgroundColor(Palette.line) },LinearLayout.LayoutParams(-1,dp(1)))
         scroll=ScrollView(activity).apply { isFillViewport=true }
-        document=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(14),dp(18),dp(30)) }
+        document=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(14),dp(16),dp(24)) }
         scroll.addView(document);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        val footer=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(14),dp(10),dp(14),dp(12));background=shape(Color.rgb(249,250,252),0) }
+        val footer=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12));background=shape(Palette.panel,0) }
+        root.addView(View(activity).apply { setBackgroundColor(Palette.line) },LinearLayout.LayoutParams(-1,dp(1)))
         root.addView(footer)
-        generationProgress=ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal).apply { max=5;progressTintList=android.content.res.ColorStateList.valueOf(ink) }
-        footer.addView(generationProgress,LinearLayout.LayoutParams(-1,dp(4)))
-        state=text("",12f,muted);footer.addView(state)
-        seek=SeekBar(activity).apply { max=1000;progressTintList=android.content.res.ColorStateList.valueOf(ink);thumbTintList=android.content.res.ColorStateList.valueOf(ink);contentDescription="Chunk playback position" }
-        footer.addView(seek,LinearLayout.LayoutParams(-1,dp(34)))
+        progressBox=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
+        progressTitle=text("",14f,Palette.accent,true).also { progressBox.addView(it) }
+        progressDetail=text("",12f,Palette.muted).also { progressBox.addView(it) }
+        gap(progressBox,8)
+        generationProgress=ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal).apply { max=1000;progressTintList=ColorStateList.valueOf(Palette.accent) }
+        progressBox.addView(generationProgress,LinearLayout.LayoutParams(-1,dp(6)))
+        gap(progressBox,8)
+        stop=button("Stop after this step") { StudioJobs.cancel();refreshTransport() }
+        progressBox.addView(stop,LinearLayout.LayoutParams(-1,-2))
+        footer.addView(progressBox,LinearLayout.LayoutParams(-1,-2))
+        notice=text("",12f,Palette.muted).also { footer.addView(it) }
+        primary=button("",true) { generate(missing(),false) }
+        footer.addView(primary,LinearLayout.LayoutParams(-1,-2))
+        gap(footer,6)
+        seek=SeekBar(activity).apply { max=1000;progressTintList=ColorStateList.valueOf(Palette.accent);thumbTintList=ColorStateList.valueOf(Palette.accent);contentDescription="Playback position" }
+        footer.addView(seek,LinearLayout.LayoutParams(-1,dp(36)))
         seek.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(b: SeekBar?) { dragging=true }
             override fun onStopTrackingTouch(b: SeekBar?) { audio.seek((audio.duration.toLong()*seek.progress/1000).toInt());dragging=false }
             override fun onProgressChanged(b: SeekBar?,p: Int,user: Boolean) { if(user && !dragging)audio.seek((audio.duration.toLong()*p/1000).toInt()) }
         })
         val transport=row(footer)
-        position=text("0:00 / 0:00",11f,muted);transport.addView(position,LinearLayout.LayoutParams(0,-2,1.3f))
-        add(transport,button("│‹") { select((selected-1).coerceAtLeast(0)) },.65f)
-        play=button("▶",true) { if(loaded!=selected) load(true) else { playingAll=!audio.playing;audio.toggle() } };add(transport,play,.8f,48)
-        add(transport,button("›│") { select((selected+1).coerceAtMost(parts().length()-1)) },.65f)
-        add(transport,button("1×") { val speeds=floatArrayOf(.75f,1f,1.25f,1.5f);val next=speeds[(speeds.indexOfFirst { kotlin.math.abs(it-audio.speed)<.01f }+1)%speeds.size];audio.changeSpeed(next);(transport.getChildAt(4) as Button).text="${next}×" },.8f)
-        stop=button("Stop generation") { StudioJobs.cancel() };footer.addView(stop,LinearLayout.LayoutParams(-1,dp(42)))
+        position=text("0:00 / 0:00",12f,Palette.muted);transport.addView(position,LinearLayout.LayoutParams(0,-2,1f))
+        previous=icon(R.drawable.ic_prev,"Previous chunk") { select((selected-1).coerceAtLeast(0)) }
+        play=icon(R.drawable.ic_play,"Play chunk",true) { if(loaded!=selected) load(true) else { playingAll=!audio.playing;audio.toggle() } }
+        next=icon(R.drawable.ic_next,"Next chunk") { select((selected+1).coerceAtMost(parts().length()-1)) }
+        speed=button("1×") { val speeds=floatArrayOf(.75f,1f,1.25f,1.5f,2f);val value=speeds[(speeds.indexOfFirst { kotlin.math.abs(it-audio.speed)<.01f }+1)%speeds.size];audio.changeSpeed(value);speed.text=speedLabel(value) }
+        speed.contentDescription="Playback speed"
+        for((view,size) in listOf(previous to 48,play to 56,next to 48)) transport.addView(view,LinearLayout.LayoutParams(dp(size),dp(size)).apply { setMargins(dp(4),0,dp(4),0) })
+        transport.addView(speed,LinearLayout.LayoutParams(dp(64),-2).apply { setMargins(dp(8),0,0,0) })
         renderDocument();handler.post(tick)
+        if(autoGenerate && !StudioJobs.busy && missing().isNotEmpty()) guard { generate(missing(),false) }
     }
+    private fun speedLabel(value: Float)=(if(value==value.toInt().toFloat()) value.toInt().toString() else value.toString())+"×"
     private fun TextView.assign(value: String) { if(text.toString()!=value)text=value }
     private fun time(ms: Int)="%d:%02d".format(ms/60000,ms/1000%60)
     private fun select(index: Int) { audio.pause();playingAll=false;selected=index;loaded=-1;renderDocument();refreshTransport() }
     private fun load(auto: Boolean) { require(file(selected).isFile) { "Generate this chunk first." };loaded=selected;playingAll=auto;audio.load(file(selected),auto) }
+    private fun requestExport() {
+        val remaining=missing()
+        if(remaining.isEmpty() && File(dir,"full.wav").isFile) { pause();export();return }
+        require(!StudioJobs.busy) { "Export becomes available when generation finishes." }
+        if(remaining.isEmpty()) { startTask("Assembling your narration…") { StudioJobs.assemble(it,dir) };return }
+        AlertDialog.Builder(activity).setTitle("Not ready to export")
+            .setMessage("${remaining.size} of ${parts().length()} chunks still need audio. Generate them now? Chunks that already have audio are kept.")
+            .setNegativeButton("Not now",null).setPositiveButton("Generate ${remaining.size}") { _,_ -> guard { generate(remaining,false) } }.show()
+    }
     private fun refreshTransport() {
         val ready=file(selected).isFile
-        play.isEnabled=ready && !audio.loading;play.assign(if(audio.playing) "Ⅱ" else "▶")
-        play.contentDescription=if(audio.playing) "Pause playback" else "Play selected chunk"
+        val total=parts().length();val done=total-missing().size
+        val voice=meta().optString("voiceName","Default voice")
+        subtitle.assign("$voice · $done of $total chunks ready")
+        val mine=ownsJob();val otherJob=StudioJobs.busy && !mine
+        progressBox.visibility=if(mine) View.VISIBLE else View.GONE
+        if(mine) {
+            val s=StudioJobs.generation.snapshot()
+            val active=StudioJobs.activeChunk
+            progressTitle.assign(if(active>=0) "Generating chunk ${active+1}${if(s.total>1) " · ${(s.completed+1).coerceAtMost(s.total)} of ${s.total}" else ""}" else StudioJobs.status.lineSequence().first())
+            val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)}s of audio so far" else ""
+            progressDetail.assign("${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech")
+            // Milestones only: chunks done plus the current chunk's stage. Never presented as time remaining.
+            generationProgress.progress=if(s.total>0) ((s.completed+(s.stageNumber-1).coerceAtLeast(0)/5f)*1000/s.total).toInt() else 0
+            stop.isEnabled=!StudioJobs.stop;stop.assign(if(StudioJobs.stop) "Stopping…" else "Stop after this step")
+        }
+        val remaining=total-done
+        primary.visibility=if(!mine && remaining>0) View.VISIBLE else View.GONE
+        primary.assign(if(done==0) "Generate all $total chunks" else "Generate $remaining remaining ${if(remaining==1) "chunk" else "chunks"}")
+        primary.isEnabled=!StudioJobs.busy
+        val message=when {
+            otherJob -> "Another task is running. You can listen while it finishes."
+            !mine && StudioJobs.lastError!=null -> "Couldn't generate: ${StudioJobs.lastError}"
+            audio.error!=null -> audio.error!!
+            !mine && remaining==0 -> "All chunks ready. Tap a paragraph to listen, edit or regenerate it."
+            else -> ""
+        }
+        notice.assign(message);notice.visibility=if(message.isEmpty()) View.GONE else View.VISIBLE
+        notice.setTextColor(if(message.startsWith("Couldn't")) Palette.error else Palette.muted)
+        play.isEnabled=ready && !audio.loading
+        play.setImageResource(if(audio.playing) R.drawable.ic_pause else R.drawable.ic_play)
+        play.contentDescription=if(audio.playing) "Pause" else "Play chunk ${selected+1}"
+        previous.isEnabled=selected>0;next.isEnabled=selected<total-1
         if(!dragging)seek.progress=if(loaded==selected && audio.duration>0) (audio.position.toLong()*1000/audio.duration).toInt() else 0
         seek.isEnabled=ready && loaded==selected && !audio.loading
-        position.assign(if(loaded==selected) "${time(audio.position)} / ${time(audio.duration)}" else "0:00 / 0:00")
-        generationProgress.visibility=if(StudioJobs.busy) View.VISIBLE else View.GONE
-        generationProgress.progress=StudioJobs.generation.snapshot().stageNumber.coerceIn(0,5)
-        state.assign(if(StudioJobs.busy) StudioJobs.status+" · "+StudioJobs.generation.snapshot().elapsed else StudioJobs.lastError?.let { "Couldn't generate: $it" } ?: audio.error ?: "Chunk ${selected+1} of ${parts().length()} · ${if(ready) "Ready to play" else "Not generated"}")
-        stop.visibility=if(StudioJobs.busy) View.VISIBLE else View.GONE
-        edit.isEnabled=!StudioJobs.busy
-        action.isEnabled=!StudioJobs.busy;all.isEnabled=!StudioJobs.busy && (0 until parts().length()).any { !file(it).isFile }
-        exportButton.isEnabled=!StudioJobs.busy && File(dir,"full.wav").isFile
-        for(control in listOf(exportButton,action,edit,all,play))control.alpha=if(control.isEnabled) 1f else .35f
+        position.assign(if(loaded==selected) "${time(audio.position)} / ${time(audio.duration)}" else if(ready) "Chunk ${selected+1}" else "No audio yet")
+        exportButton.isEnabled=!StudioJobs.busy
+        exportButton.setTextColor(if(remaining==0) Palette.bg else Palette.ink)
+        exportButton.background=shape(if(remaining==0) Palette.accent else Palette.raised)
+        for(control in listOf<View>(exportButton,primary,play,previous,next,speed))control.alpha=if(control.isEnabled) 1f else .35f
+    }
+    private fun chunkStatus(index: Int): Pair<String,Int> = when {
+        StudioJobs.busy && StudioJobs.chunkProject==dir.name && StudioJobs.activeChunk==index -> "Generating…" to Palette.accent
+        StudioJobs.busy && StudioJobs.chunkProject==dir.name && index in StudioJobs.queuedChunks -> "Queued" to Palette.muted
+        file(index).isFile -> "Ready · ${time(runCatching { AudioPeaks.durationMs(file(index)).toInt() }.getOrDefault(0))}" to Palette.muted
+        else -> "No audio yet" to Palette.muted
     }
     private fun renderDocument() {
-        val y=scroll.scrollY;document.removeAllViews();val m=meta();val chunks=m.getJSONArray("sections")
-        document.addView(text("${m.optString("voiceName","Default voice")} · ${chunks.length()} chunks",12f,muted));gap(document,18)
+        val y=scroll.scrollY;document.removeAllViews();val chunks=parts()
+        val busy=StudioJobs.busy
         for(i in 0 until chunks.length()) {
-            val block=LinearLayout(activity).apply { orientation=LinearLayout.HORIZONTAL;setPadding(0,dp(8),0,dp(8));isSelected=i==selected;contentDescription="Chunk ${i+1}";setOnClickListener { select(i) } }
-            val avatar=text(m.optString("voiceName","V").take(1).uppercase(),12f,Color.WHITE).apply { gravity=Gravity.CENTER;background=shape(ink,30) }
-            block.addView(avatar,LinearLayout.LayoutParams(dp(25),dp(25)).apply { setMargins(0,dp(6),dp(10),0) })
-            val line=View(activity).apply { setBackgroundColor(if(i==selected) ink else border) };block.addView(line,LinearLayout.LayoutParams(dp(2),-1).apply { setMargins(0,0,dp(10),0) })
-            val body=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
-            val words=text(chunks.getString(i),17f).apply { setPadding(dp(7),dp(6),dp(7),dp(6));background=shape(if(i==selected) blue else if(file(i).isFile) Color.rgb(244,248,255) else Color.WHITE,5) }
-            body.addView(words)
-            val status=if(file(i).isFile) "✓ Generated · ${time(runCatching { AudioPeaks.durationMs(file(i)).toInt() }.getOrDefault(0))}" else "○ Not generated"
-            body.addView(text("${i+1}   $status",11f,muted).apply { setPadding(dp(7),dp(7),0,0) })
-            block.addView(body,LinearLayout.LayoutParams(0,-2,1f));document.addView(block);gap(document,10)
+            val chosen=i==selected
+            val (status,statusColor)=chunkStatus(i)
+            val card=LinearLayout(activity).apply {
+                orientation=LinearLayout.VERTICAL;setPadding(dp(14),dp(12),dp(14),dp(12))
+                background=shape(if(chosen) Palette.panel else Palette.bg,14,if(chosen) Palette.accent else Palette.line,if(chosen) 2 else 1)
+                isSelected=chosen;isClickable=true;isFocusable=true
+                contentDescription="Chunk ${i+1}, $status. ${chunks.getString(i)}"
+                setOnClickListener { if(selected!=i) select(i) }
+            }
+            val top=row(card)
+            top.addView(text("${i+1}",12f,if(chosen) Palette.accent else Palette.muted,true),LinearLayout.LayoutParams(0,-2,1f))
+            top.addView(text(status,12f,statusColor,status=="Generating…"))
+            gap(card,6)
+            card.addView(text(chunks.getString(i),16f,if(chosen || file(i).isFile) Palette.ink else Palette.muted))
+            if(chosen) {
+                gap(card,12)
+                val actions=row(card)
+                val ready=file(i).isFile
+                if(ready) actions.addView(button("Play") { if(loaded!=selected) load(true) else { playingAll=!audio.playing;audio.toggle() } }.apply { isEnabled=true },LinearLayout.LayoutParams(0,-2,1f))
+                if(ready) actions.addView(Space(activity),LinearLayout.LayoutParams(dp(8),1))
+                actions.addView(button(if(ready) "Regenerate" else "Generate",!ready) { generate(listOf(i),ready) }.apply { isEnabled=!busy;alpha=if(busy) .35f else 1f },LinearLayout.LayoutParams(0,-2,1.2f))
+                actions.addView(Space(activity),LinearLayout.LayoutParams(dp(8),1))
+                actions.addView(button("Edit") { editChunk() }.apply { isEnabled=!busy;alpha=if(busy) .35f else 1f;contentDescription="Edit chunk ${i+1} text" },LinearLayout.LayoutParams(0,-2,.9f))
+            }
+            document.addView(card,LinearLayout.LayoutParams(-1,-2));gap(document,10)
         }
-        action.text=if(file(selected).isFile) "↻ Regenerate" else "Generate chunk"
+        document.addView(text("Blank lines in your script start a new chunk. Long paragraphs are split at about 220 characters so each chunk stays within what the model handles well.",12f,Palette.muted).apply { setPadding(dp(4),dp(8),dp(4),0) })
         scroll.post { scroll.scrollTo(0,y) }
     }
     private fun generate(indices: List<Int>,fresh: Boolean) {
         require(!StudioJobs.busy) { "Wait for the current task." }
-        require(indices.isNotEmpty()) { "All chunks are generated. Select a chunk to regenerate it." }
+        require(indices.isNotEmpty()) { "Every chunk already has audio. Select one to regenerate it." }
         audio.release();loaded=-1;playingAll=false
-        startTask(if(fresh) "Regenerating selected chunk…" else "Generating chunks…") { StudioJobs.generateChunks(it,dir,indices,fresh) }
-        refreshTransport()
+        startTask(if(fresh) "Regenerating chunk ${indices.first()+1}…" else "Generating chunks…") { StudioJobs.generateChunks(it,dir,indices,fresh) }
+        renderDocument();refreshTransport()
     }
     private fun editChunk() {
         require(!StudioJobs.busy) { "Wait for generation to finish." }
-        val editContext=ContextThemeWrapper(activity,android.R.style.Theme_Material_Light_Dialog_Alert)
-        val field=EditText(editContext).apply { setText(parts().getString(selected));minLines=4;maxLines=8;filters=arrayOf(android.text.InputFilter.LengthFilter(220));setTextColor(ink) }
-        val dialog=AlertDialog.Builder(editContext).setTitle("Edit chunk ${selected+1}").setMessage("Changing these words requires generating this chunk again.").setView(field)
-            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
+        val editContext=ContextThemeWrapper(activity,android.R.style.Theme_Material_Dialog_Alert)
+        val box=LinearLayout(editContext).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0) }
+        val field=EditText(editContext).apply {
+            setText(parts().getString(selected));minLines=4;maxLines=8;filters=arrayOf(android.text.InputFilter.LengthFilter(220))
+            inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            contentDescription="Chunk text"
+        }
+        val count=text("",12f,Palette.muted)
+        fun updateCount() { count.text="${field.length()} / 220 characters" }
+        field.addTextChangedListener(object: TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?,a: Int,b: Int,c: Int) {}
+            override fun onTextChanged(s: CharSequence?,a: Int,b: Int,c: Int) { updateCount() }
+            override fun afterTextChanged(s: Editable?) {}
+        });updateCount()
+        box.addView(field);box.addView(count)
+        val dialog=AlertDialog.Builder(editContext).setTitle("Edit chunk ${selected+1}")
+            .setMessage(if(file(selected).isFile) "Saving new words removes this chunk's audio. The previous take is kept on this phone." else "Generate this chunk after saving.")
+            .setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { guard { ChunkProjects.edit(activity,dir,selected,field.text.toString());audio.release();loaded=-1;renderDocument();refreshTransport();dialog.dismiss() } } };dialog.show()
     }
+    private var lastJobState=""
     private val tick=object: Runnable { override fun run() {
+        val jobState="${StudioJobs.busy}:${StudioJobs.activeChunk}:${StudioJobs.queuedChunks.size}"
         val nextRevision=File(dir,"project.json").lastModified().toString()+ (0 until parts().length()).joinToString { "${file(it).lastModified()}:${file(it).length()}" }
-        if(revision!=nextRevision) { revision=nextRevision;renderDocument() }
+        if(revision!=nextRevision || lastJobState!=jobState) { revision=nextRevision;lastJobState=jobState;renderDocument() }
         if(playingAll && loaded==selected && !audio.loading && !audio.playing && audio.duration>0 && audio.position>=audio.duration-40) {
             if(selected+1<parts().length() && file(selected+1).isFile) { selected++;renderDocument();load(true) } else playingAll=false
         }
-        if(!StudioJobs.busy && loaded!=selected && file(selected).isFile)load(false)
+        if(loaded!=selected && file(selected).isFile && !(ownsJob() && StudioJobs.activeChunk==selected))load(false)
         refreshTransport();handler.postDelayed(this,250)
     } }
     fun pause() { handler.removeCallbacks(tick);audio.pause();playingAll=false }
