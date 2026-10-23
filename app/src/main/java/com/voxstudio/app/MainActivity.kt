@@ -17,12 +17,11 @@ import java.util.concurrent.Executors
 import kotlin.math.*
 
 class MainActivity : Activity() {
-    private val bg = Palette.bg
-    private val panel = Palette.panel
-    private val line = Palette.line
-    private val ink = Palette.ink
-    private val muted = Palette.muted
-    private val orange = Palette.accent
+    private val ui by lazy { Ui(this) }
+    private val bg get() = Palette.bg
+    private val ink get() = Palette.ink
+    private val muted get() = Palette.muted
+    private val accent get() = Palette.accent
     private lateinit var store: StudioStore
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
@@ -40,7 +39,6 @@ class MainActivity : Activity() {
     private var drawnTab=""
     private val scrollPositions=mutableMapOf<String,Int>()
     private var libraryQuery=""
-    private var advancedSettings=false
     private val handler = Handler(Looper.getMainLooper())
     private var seenRevision = -1
     private var referenceStamp = 0L
@@ -66,10 +64,10 @@ class MainActivity : Activity() {
             if (StudioJobs.busy) updateProgress()
             if (referenceStamp != store.reference.lastModified()) { referenceStamp = store.reference.lastModified(); draw() }
             val recordingStatus = when {
-                recorder?.running == true -> "Recording · ${recorder!!.seconds}s / 20s"
+                recorder?.running == true -> "Recording · ${recorder!!.seconds} s of 20 s"
                 recorder?.active == true -> "Processing sample…"
-                store.reference.isFile -> "Reference saved on this device"
-                else -> "Tap record for a 3–20 second sample"
+                store.reference.isFile -> "Sample saved on this phone"
+                else -> "Record yourself or import a recording"
             }
             if(recordLabel?.text?.toString()!=recordingStatus) recordLabel?.text=recordingStatus
             handler.postDelayed(this,500)
@@ -77,6 +75,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Palette.update(this)
         store = StudioStore(applicationContext)
         referenceStamp=store.reference.lastModified()
         if (!StudioJobs.busy) {
@@ -93,7 +92,6 @@ class MainActivity : Activity() {
         voiceEditor = savedInstanceState?.getBoolean("voiceEditor") ?: false
         voiceFilter = savedInstanceState?.getString("voiceFilter") ?: "All"
         exportProject = savedInstanceState?.getString("exportProject")?.let { File(store.projects,it) }
-        window.statusBarColor = bg; window.navigationBarColor = bg
         draw()
     }
     override fun onResume() { super.onResume();chunkStudio?.resume();handler.post(tick) }
@@ -102,37 +100,10 @@ class MainActivity : Activity() {
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if(level>=TRIM_MEMORY_RUNNING_LOW && !StudioJobs.busy) StudioJobs.scheduleModelRelease(0) }
     override fun onDestroy() { chunkStudio?.setOnDismissListener(null);chunkStudio?.dismiss();chunkStudio=null;stopPlayback(); io.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { pageScroll?.let { scrollPositions[drawnTab]=it.scrollY };scrollPositions.forEach { (key,value) -> outState.putInt("scroll$key",value) };outState.putString("libraryQuery",libraryQuery);outState.putString("tab",tab); outState.putBoolean("voiceEditor",voiceEditor);outState.putString("voiceFilter",voiceFilter); outState.putString("exportProject",exportProject?.name); super.onSaveInstanceState(outState) }
-    private fun dp(n: Int) = (n * resources.displayMetrics.density).roundToInt()
-    private fun shape(color: Int, radius: Int = 18, border: Int? = null) = GradientDrawable().apply {
-        setColor(color); cornerRadius = dp(radius).toFloat(); if (border != null) setStroke(dp(1),border)
-    }
-    private fun label(text: String, size: Float = 14f, color: Int = ink, bold: Boolean = false): TextView = TextView(this).apply {
-        this.text = text; textSize = size; setTextColor(color); if (bold) typeface = Typeface.create("sans-serif-medium",Typeface.NORMAL)
-        setLineSpacing(dp(2).toFloat(),1f)
-    }
-    private fun gap(parent: LinearLayout, n: Int = 12) { parent.addView(Space(this),LinearLayout.LayoutParams(1,dp(n))) }
-    private fun column(parent: LinearLayout, card: Boolean = false): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        if (card) { background = shape(panel,16,line); setPadding(dp(16),dp(16),dp(16),dp(16)) }
-        parent.addView(this,LinearLayout.LayoutParams(-1,-2))
-    }
-    private fun row(parent: LinearLayout): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-        parent.addView(this,LinearLayout.LayoutParams(-1,-2))
-    }
-    private fun button(text: String, primary: Boolean = false, enabled: Boolean = !StudioJobs.busy, click: () -> Unit): Button = Button(this).apply {
-        this.text = text; isAllCaps = false; textSize = 14f; minHeight = dp(48); minimumHeight = dp(48)
-        typeface = Typeface.create("sans-serif-medium",Typeface.NORMAL)
-        setTextColor(if (primary) bg else ink)
-        background = shape(if (primary) orange else Color.rgb(39,47,40),12)
-        setPadding(dp(14),dp(6),dp(14),dp(6)); isEnabled = enabled; alpha = if (enabled) 1f else .4f
-        setOnClickListener { safely(click) }
-    }
-    private fun fullButton(parent: LinearLayout, text: String, primary: Boolean = false, enabled: Boolean = !StudioJobs.busy, click: () -> Unit) {
-        parent.addView(button(text,primary,enabled,click).apply { minHeight=dp(50);minimumHeight=dp(50) },LinearLayout.LayoutParams(-1,-2))
-    }
-    private fun field(parent: LinearLayout, hintText: String, value: String, lines: Int = 1, key: String? = null): EditText = EditText(this).apply {
-        hint = hintText; setText(value); setTextColor(ink); setHintTextColor(muted); textSize = 16f
+    private fun dp(n: Int) = ui.dp(n)
+    /** Multi-line fields scroll internally first; the page takes over at their edges. */
+    private fun field(parent: LinearLayout, hintText: String, value: String, lines: Int = 1, key: String? = null, surface: Int = Palette.panel): EditText = EditText(this).apply {
+        hint = hintText; setText(value); setTextColor(ink); setHintTextColor(Palette.faint); textSize = 17f
         gravity = Gravity.TOP or Gravity.START; minLines = lines; maxLines = lines
         inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
             (if (lines > 1) android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE else 0)
@@ -161,7 +132,7 @@ class MainActivity : Activity() {
                 false
             }
         }
-        background = shape(Color.rgb(20,25,21),12,line); setPadding(dp(14),dp(14),dp(14),dp(14))
+        background = ui.rounded(surface,12); setPadding(dp(16),dp(14),dp(16),dp(14))
         isEnabled = !StudioJobs.busy && recorder?.active!=true; contentDescription=hintText; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         parent.addView(this,LinearLayout.LayoutParams(-1,-2))
         if (key != null) addTextChangedListener(object : TextWatcher {
@@ -205,18 +176,32 @@ class MainActivity : Activity() {
         val blocked=StudioJobs.busy || recorder?.active==true
         val ready=footerReady?.invoke() ?: true
         footerButton?.let {
-            it.isEnabled=!blocked && ready;it.alpha=if(it.isEnabled) 1f else .4f
-            val title=if(StudioJobs.busy) "Working…" else if(cloneVoiceAction!=null) "Save voice" else if(!store.ready) "Set up to generate" else "Generate speech"
+            ui.setEnabled(it,!blocked && ready)
+            val title=if(StudioJobs.busy) "Working…" else if(cloneVoiceAction!=null) "Save Voice" else if(!store.ready) "Set Up Speech" else "Generate"
             if(it.text.toString()!=title) it.text=title
         }
-        val hint=if(StudioJobs.busy) "You can browse while this task runs." else footerMessage?.invoke() ?: ""
-        footerHint?.let { if(it.text.toString()!=hint) it.text=hint }
+        val hint=if(StudioJobs.busy) "You can keep browsing while this finishes." else footerMessage?.invoke() ?: ""
+        footerHint?.let { if(it.text.toString()!=hint) it.text=hint;it.visibility=if(hint.isEmpty()) View.GONE else View.VISIBLE }
     }
-    private fun pageTitle(title: String,subtitle: String) {
-        content.addView(label(title,27f,ink,true));gap(content,6)
-        content.addView(label(subtitle,13f,muted));gap(content,18)
+    private fun pageTitle(title: String,subtitle: String?=null,trailing: View?=null) {
+        val top=ui.row(content).apply { setPadding(dp(4),dp(12),0,0) }
+        top.addView(ui.largeTitle(title).apply { isFocusable=true;isAccessibilityHeading=true },LinearLayout.LayoutParams(0,-2,1f))
+        trailing?.let { top.addView(it) }
+        subtitle?.let { ui.gap(content,2);content.addView(ui.subhead(it).apply { setPadding(dp(4),0,dp(4),0) }) }
+        ui.gap(content,8)
+    }
+    private fun systemBars() {
+        window.statusBarColor=bg;window.navigationBarColor=Palette.bar
+        if(Build.VERSION.SDK_INT>=30) {
+            val light=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(if(Palette.dark) 0 else light,light)
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility=if(Palette.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
     }
     private fun draw() {
+        Palette.update(this)
         pageScroll?.let { scrollPositions[drawnTab]=it.scrollY }
         cloneVoiceAction=null;generateSpeechAction=null;footerReady=null;footerMessage=null;footerButton=null;footerHint=null
         jobText=null;timingText=null;progressBar=null;stopButton=null;recordLabel=null
@@ -231,32 +216,22 @@ class MainActivity : Activity() {
             insets
         }
         setContentView(root)
-        val header=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(20),dp(12),dp(20),dp(10)) }
-        header.addView(label("▥  VOX STUDIO",15f,ink,true),LinearLayout.LayoutParams(0,-2,1f))
-        header.addView(label(if(store.ready) "● Offline ready" else "Set up offline",11f,if(store.ready) muted else orange,true).apply {
-            background=shape(panel,20);setPadding(dp(12),dp(10),dp(12),dp(10));contentDescription="Open Settings"
-            isFocusable=true;setOnClickListener { navigate("Settings") }
-        })
-        root.addView(header)
+        // The decor view (and its insets controller) exists only after setContentView.
+        systemBars()
         val scroll=ScrollView(this).apply { isFillViewport=true;clipToPadding=false }
         pageScroll=scroll;drawnTab=tab
-        content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(10),dp(20),dp(22)) }
+        content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(32)) }
         scroll.addView(content);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        if(StudioJobs.busy) progressCard()
-        else StudioJobs.lastError?.let { message ->
-            val box=column(content,true)
-            box.addView(label("Couldn't finish",15f,Color.rgb(245,162,142),true));gap(box,6)
-            box.addView(label(message,13f,muted));gap(box,10)
-            fullButton(box,"Dismiss",enabled=true) { StudioJobs.dismissError();draw() };gap(content,16)
-        }
         when(tab) { "Create" -> createScreen();"Voices" -> voiceScreen();"Library" -> libraryScreen();else -> setupScreen() }
         (cloneVoiceAction ?: generateSpeechAction)?.let { action ->
-            val footer=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),dp(10));background=shape(bg,0,line) }
-            footerHint=label("",11f,muted).also { footer.addView(it) };gap(footer,6)
-            footerButton=button("",true) { hideKeyboard();action() }.also { it.minHeight=dp(50);it.minimumHeight=dp(50);footer.addView(it,LinearLayout.LayoutParams(-1,-2)) }
-            root.addView(footer);updateFooter()
+            root.addView(ui.hairline(),LinearLayout.LayoutParams(-1,maxOf(1,dp(1)/2)))
+            val footer=ui.column(root).apply { setPadding(dp(16),dp(10),dp(16),dp(10));setBackgroundColor(Palette.bar) }
+            footerHint=ui.footnote("").apply { gravity=Gravity.CENTER;setPadding(0,0,0,dp(8)) }.also { footer.addView(it) }
+            footerButton=ui.button("","primary") { hideKeyboard();safely(action) }.also { footer.addView(it,LinearLayout.LayoutParams(-1,-2)) }
+            updateFooter()
         }
-        val navigation=row(root).apply { setPadding(dp(10),dp(6),dp(10),dp(8));background=shape(bg,0,line) }
+        root.addView(ui.hairline(),LinearLayout.LayoutParams(-1,maxOf(1,dp(1)/2)))
+        val navigation=ui.row(root).apply { setPadding(dp(4),dp(6),dp(4),dp(4));setBackgroundColor(Palette.bar) }
         navigationView=navigation
         // Some resize-mode windows consume IME insets before they reach our root.
         // Observe the visible window as well so typing always gets the tab space.
@@ -268,117 +243,110 @@ class MainActivity : Activity() {
             val visibility=if(keyboardVisible) View.GONE else View.VISIBLE
             if(navigation.visibility!=visibility) navigation.visibility=visibility
         }
-        listOf("Create" to "✦","Voices" to "◉","Library" to "≡","Settings" to "⚙").forEach { (item,icon) ->
-            val nav=label("$icon\n$item",11f,if(tab==item) orange else muted,tab==item).apply {
-                gravity=Gravity.CENTER;background=shape(if(tab==item) panel else bg,12);setPadding(0,dp(6),0,dp(6));isFocusable=true
-                contentDescription="$item tab";isSelected=tab==item
+        listOf("Create" to R.drawable.ic_tab_create,"Voices" to R.drawable.ic_tab_voices,"Library" to R.drawable.ic_tab_library,"Settings" to R.drawable.ic_tab_settings).forEach { (item,icon) ->
+            val chosen=tab==item;val color=if(chosen) accent else muted
+            val nav=ui.column().apply {
+                gravity=Gravity.CENTER;minimumHeight=dp(52);isClickable=true;isFocusable=true;background=ui.pressable(null,12)
+                contentDescription="$item tab";isSelected=chosen
                 setOnClickListener { navigate(item) }
             }
-            nav.minHeight=dp(54)
-            navigation.addView(nav,LinearLayout.LayoutParams(0,-2,1f).apply { setMargins(dp(2),0,dp(2),0) })
+            nav.addView(ImageView(this).apply { setImageResource(icon);imageTintList=android.content.res.ColorStateList.valueOf(color) },LinearLayout.LayoutParams(dp(26),dp(26)))
+            nav.addView(ui.caption(item,color).apply { textSize=10f;gravity=Gravity.CENTER })
+            navigation.addView(nav,LinearLayout.LayoutParams(0,-2,1f))
         }
         updateBackCallback()
         val restore=scrollPositions[tab] ?: 0
         scroll.post { if(pageScroll===scroll) scroll.scrollTo(0,restore) }
         root.requestApplyInsets()
     }
-    private fun progressCard() {
-        val box = column(content,true)
-        jobText = label(StudioJobs.status,14f,if(StudioJobs.busy) orange else muted).also { box.addView(it) }
-        timingText = label("",12f,muted).also { box.addView(it) }
-        if (StudioJobs.busy) {
-            gap(box,10)
-            progressBar = ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
-                max = 100; progressTintList = android.content.res.ColorStateList.valueOf(orange)
-                box.addView(this,LinearLayout.LayoutParams(-1,dp(5)))
-            }
-            gap(box)
-            stopButton = button("Stop after section",enabled=true) { StudioJobs.cancel(); updateProgress() }.also { box.addView(it,LinearLayout.LayoutParams(-1,dp(44))) }
+    /** Shown on every tab while a task runs, and for an unacknowledged error. */
+    private fun statusCard() {
+        if(StudioJobs.busy) {
+            ui.gap(content,8)
+            val box=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(8)) }
+            jobText=ui.headline(StudioJobs.status).also { box.addView(it) }
+            timingText=ui.footnote("").also { box.addView(it) }
+            ui.gap(box,10)
+            progressBar=ui.progressBar(100).also { box.addView(it,LinearLayout.LayoutParams(-1,dp(4))) }
+            stopButton=ui.button("Stop","plain") { StudioJobs.cancel();updateProgress() }.also { box.addView(it,LinearLayout.LayoutParams(-2,-2)) }
+            updateProgress()
+        } else StudioJobs.lastError?.let { message ->
+            ui.gap(content,8)
+            val box=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(8)) }
+            box.addView(ui.headline("Couldn’t Finish",Palette.error));ui.gap(box,4)
+            box.addView(ui.subhead(message))
+            box.addView(ui.button("Dismiss","plain") { StudioJobs.dismissError();draw() },LinearLayout.LayoutParams(-2,-2))
         }
-        updateProgress(); gap(content)
     }
     private fun updateProgress() {
         updateFooter()
-        val status=StudioJobs.status
+        val status=StudioJobs.status.lineSequence().first()
         if(jobText?.text?.toString()!=status) jobText?.text=status
         val s=StudioJobs.generation.snapshot()
         val native=StudioJobs.nativeActive
         val summary = if(s.total>0) {
-            val speech=if(s.frames>0) " · generated ~${"%.1f".format(s.audioSeconds)}s of speech" else ""
-            "Elapsed ${s.elapsed} · current stage ${s.stageElapsed}$speech\n${s.completed} of ${s.total} sections complete"
+            val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)} s of audio" else ""
+            "${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech · ${s.completed} of ${s.total} chunks done"
         } else ""
         timingText?.visibility=if(summary.isEmpty()) View.GONE else View.VISIBLE
         if(timingText?.text?.toString()!=summary) timingText?.text=summary
         progressBar?.max=if(native) 5 else 100
         progressBar?.isIndeterminate=if(native) false else StudioJobs.progress<0
         progressBar?.progress=if(native) (s.stageNumber-1).coerceAtLeast(0) else StudioJobs.progress.coerceAtLeast(0)
-        stopButton?.isEnabled = !StudioJobs.stop
-        stopButton?.text = if (StudioJobs.isTransfer) "Cancel task" else "Stop generation"
+        stopButton?.let { ui.setEnabled(it,!StudioJobs.stop) }
+        stopButton?.text = if(StudioJobs.stop) "Stopping…" else if (StudioJobs.isTransfer) "Cancel" else "Stop"
     }
-    private fun qualityName(steps: Int)=when(steps) { 4 -> "Fast preview";10 -> "Best quality";else -> "Balanced" }
-    private fun qualityDetail(steps: Int)=when(steps) { 4 -> "Quick drafts; words may be less clear";10 -> "Takes longer; suited to final takes";else -> "A balance of speed and quality" }
+    private fun qualityName(steps: Int)=when(steps) { 4 -> "Fast Preview";10 -> "Best Quality";else -> "Balanced" }
+    private fun qualityDetail(steps: Int)=when(steps) { 4 -> "Quick drafts; words may be less clear";10 -> "Slower; best for final takes";else -> "A balance of speed and quality" }
     private fun chooseQuality(changed: () -> Unit) {
         val values=listOf(4,6,10)
         val names=values.map { "${qualityName(it)} — ${qualityDetail(it)}" }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("Generation quality")
+        AlertDialog.Builder(this).setTitle("Quality")
             .setSingleChoiceItems(names,values.indexOf(store.prefs.getInt("steps",6))) { dialog,index ->
                 store.prefs.edit().putInt("steps",values[index]).apply();dialog.dismiss();changed();updateFooter()
             }.setNegativeButton("Cancel",null).show()
     }
+    private fun voiceAvatar(voice: VoiceLibrary.Voice?): View {
+        val entry=voice?.let { BuiltInVoices.entry(this,it.id) }
+        return ui.avatar(voice?.name ?: "?",entry?.let { genderHue(it) })
+    }
+    private fun genderHue(entry: BuiltInVoices.Entry)=(if(entry.gender=="female") 330f else 205f)+((entry.id.hashCode() and 0xff)%30)-15f
     private fun createScreen() {
-        pageTitle("Create speech","Add your script, then generate and refine individual chunks.")
+        pageTitle("Create")
+        statusCard()
+        if(!store.ready) {
+            ui.gap(content,8)
+            val setup=ui.group(content).apply { setPadding(dp(16),dp(16),dp(16),dp(16)) }
+            setup.addView(ui.headline("Set Up Offline Speech"));ui.gap(setup,4)
+            setup.addView(ui.subhead("Download the speech model once, about 500 MB. After that, everything runs on this phone."));ui.gap(setup,14)
+            setup.addView(ui.button("Set Up","primary") { navigate("Settings") },LinearLayout.LayoutParams(-1,-2))
+        }
         store.prefs.getString("studioProjectId",null)?.let { id ->
             val dir=File(store.projects,id)
             val meta=if(File(dir,"project.json").isFile) runCatching { store.metadata(dir) }.getOrNull() else null
             if(meta!=null) {
                 val total=meta.optJSONArray("sections")?.length() ?: 0
                 val done=(0 until total).count { File(dir,"section-$it.wav").isFile }
-                val card=column(content,true)
-                val top=row(card)
-                val words=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-                words.addView(label("CONTINUE",10f,muted,true))
-                words.addView(label(meta.optString("title"),16f,ink,true).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END })
-                words.addView(label("$done of $total chunks ready",12f,if(done==total) orange else muted))
-                top.addView(words,LinearLayout.LayoutParams(0,-2,1f))
-                top.addView(button("Open",enabled=true) { openStudio(dir) }.apply { contentDescription="Open ${meta.optString("title")} in studio" },LinearLayout.LayoutParams(-2,-2))
-                gap(content,16)
-            }
-        }
-        if(!store.ready) {
-            val setup=column(content,true);setup.addView(label("Make your phone ready",16f,ink,true));gap(setup,6)
-            setup.addView(label("Download the speech model once, then create entirely offline.",13f,muted));gap(setup,10)
-            fullButton(setup,"Set up offline speech",true) { navigate("Settings") };gap(content,16)
-        }
-        StudioJobs.lastProject?.let { id ->
-            val dir=File(store.projects,id)
-            // The Continue card already covers the project open in the studio.
-            if(!StudioJobs.busy && File(dir,"full.wav").isFile && id!=store.prefs.getString("studioProjectId",null)) {
-                val ready=row(content)
-                ready.addView(label("Your narration is ready",13f,orange,true),LinearLayout.LayoutParams(0,-2,1f))
-                ready.addView(button("Listen") { showProject(dir) },LinearLayout.LayoutParams(-2,-2));gap(content,14)
+                ui.sectionHeader(content,"Continue")
+                ui.groupRow(ui.group(content),meta.optString("title"),"$done of $total chunks ready",chevron=true,
+                    description="Continue ${meta.optString("title")}, $done of $total chunks ready") { safely { openStudio(dir) } }
             }
         }
         val selectedVoice=store.selectedVoice
-        val selectedVoiceName=selectedVoice?.name ?: "Model voice"
-        val voice=column(content,true)
-        val voiceHeading=row(voice)
-        voiceHeading.addView(label("VOICE",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
-        voiceHeading.addView(button("Browse") { voiceEditor=false;navigate("Voices") },LinearLayout.LayoutParams(-2,-2))
-        gap(voice,6)
-        fullButton(voice,"$selectedVoiceName  ▾") { chooseSavedVoice() }
-        gap(voice,8);voice.addView(label(voiceDescription(selectedVoice),12f,muted))
-        gap(content,18)
-        val heading=row(content)
-        heading.addView(label("YOUR SCRIPT",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
-        heading.addView(label("Draft saves automatically",11f,muted));gap(content,8)
-        val script=field(content,"Write or paste your English script…",store.prefs.getString("script","") ?: "",6,"script")
+        val selectedVoiceName=selectedVoice?.name ?: "Model Voice"
+        ui.sectionHeader(content,"Voice")
+        val settings=ui.group(content)
+        ui.groupRow(settings,selectedVoiceName,voiceDescription(selectedVoice),leading=voiceAvatar(selectedVoice),chevron=true,
+            description="Voice: $selectedVoiceName. Change voice") { voiceEditor=false;navigate("Voices") }
+        ui.groupRow(settings,"Quality",value=qualityName(store.prefs.getInt("steps",6)),chevron=true) { chooseQuality { draw() } }
+        ui.sectionHeader(content,"Script",ui.footnote("Saved automatically"))
+        val script=field(content,"Write or paste your English script…",store.prefs.getString("script","") ?: "",8,"script")
         script.contentDescription="Script";script.filters=arrayOf(InputFilter.LengthFilter(6000))
-        val count=label("",11f,muted);gap(content,6);content.addView(count)
+        val count=ui.footnote("").apply { setPadding(dp(16),dp(7),dp(16),0) };content.addView(count)
         fun updateCount() {
             val words=script.text.toString().trim().split(Regex("\\s+")).count { it.isNotBlank() }
             val chunks=runCatching { ChunkProjects.split(script.text.toString()).size }.getOrDefault(0)
-            count.text="${script.length()} / 6,000 characters · $words words${if(chunks>0) " · $chunks ${if(chunks==1) "chunk" else "chunks"}" else ""}"
-            if(script.text.isNotBlank()) script.error=null
+            count.text="${"%,d".format(script.length())} of 6,000 characters · $words words${if(chunks>0) " · $chunks ${if(chunks==1) "chunk" else "chunks"}" else ""}"
             updateFooter()
         }
         script.addTextChangedListener(object: TextWatcher {
@@ -386,19 +354,12 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?,start: Int,before: Int,count: Int) { updateCount() }
             override fun afterTextChanged(s: Editable?) {}
         });updateCount()
-        gap(content,18)
-        content.addView(label("QUALITY",10f,muted,true));gap(content,8)
-        lateinit var quality: Button
-        quality=button("${qualityName(store.prefs.getInt("steps",6))}  ▾") {
-            chooseQuality { quality.text="${qualityName(store.prefs.getInt("steps",6))}  ▾" }
-        }
-        quality.contentDescription="Choose generation quality";content.addView(quality,LinearLayout.LayoutParams(-1,-2))
-        gap(content,16)
-        content.addView(label("PROJECT NAME · OPTIONAL",10f,muted,true));gap(content,8)
-        val title=field(content,"Use the first words of your script",store.prefs.getString("title","") ?: "",key="title")
-        title.filters=arrayOf(InputFilter.LengthFilter(80))
+        ui.sectionHeader(content,"Title")
+        val title=field(content,"Optional",store.prefs.getString("title","") ?: "",key="title")
+        title.filters=arrayOf(InputFilter.LengthFilter(80));title.contentDescription="Project title, optional"
+        ui.sectionFooter(content,"Leave blank to use the first words of your script.")
         footerReady={ !store.ready || script.text.isNotBlank() }
-        footerMessage={ when { !store.ready -> "Finish one-time setup to start creating.";script.text.isBlank() -> "Add your text to get started.";else -> "$selectedVoiceName · ${qualityName(store.prefs.getInt("steps",6))} · opens the studio and generates every chunk" } }
+        footerMessage={ when { !store.ready -> "Finish the one-time setup to start creating.";script.text.isBlank() -> "Add your script to get started.";else -> "$selectedVoiceName · ${qualityName(store.prefs.getInt("steps",6))}" } }
         generateSpeechAction={
             if(!store.ready) navigate("Settings") else {
                 val text=script.text.toString();ScriptSections.split(text)
@@ -410,23 +371,12 @@ class MainActivity : Activity() {
         }
     }
     private fun voiceDescription(voice: VoiceLibrary.Voice?): String {
-        if(voice==null) return "Built-in voices are not installed in this build."
+        if(voice==null) return "Built-in voices are not installed in this build"
         return BuiltInVoices.entry(this,voice.id)?.label ?: "Your cloned voice"
-    }
-    private fun chooseSavedVoice() {
-        val mine=store.voices.list()
-        val builtIn=BuiltInVoices.catalog(this)
-        val ids=mine.map { it.id }+builtIn.map { it.voiceId }
-        val options=(mine.map { "${it.name} — your voice" }+builtIn.map { "${it.name} — ${it.label}" }).toTypedArray()
-        AlertDialog.Builder(this).setTitle("Choose voice")
-            .setSingleChoiceItems(options,ids.indexOf(store.selectedVoice?.id)) { dialog,index ->
-                store.prefs.edit().putString("selectedVoiceId",ids[index]).apply()
-                dialog.dismiss(); draw()
-            }.setNegativeButton("Cancel",null).show()
     }
     private fun editName(title: String,current: String,limit: Int,save: (String) -> Unit) {
         val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(10),dp(20),0) }
-        val name=field(box,"Name",current).apply { filters=arrayOf(InputFilter.LengthFilter(limit));setSelectAllOnFocus(true) }
+        val name=field(box,"Name",current,surface=Palette.raised).apply { filters=arrayOf(InputFilter.LengthFilter(limit));setSelectAllOnFocus(true) }
         val dialog=AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             try { save(name.text.toString());dialog.dismiss() }
@@ -443,21 +393,21 @@ class MainActivity : Activity() {
         val words=store.prefs.getString("transcript","") ?: ""
         val saved=store.voices.list().any { it.name==name && it.transcript==words && store.reference.isFile && it.reference.readBytes().contentEquals(store.reference.readBytes()) }
         val draft=store.reference.isFile || name.isNotBlank() || words.isNotBlank()
-        if(draft && !saved) AlertDialog.Builder(this).setTitle("Continue your voice draft?")
+        if(draft && !saved) AlertDialog.Builder(this).setTitle("Continue Your Draft?")
             .setMessage("You have an unfinished voice. Continue it, or start fresh with a new sample.")
-            .setPositiveButton("Continue draft") { _,_ -> open(false) }
-            .setNegativeButton("Start fresh") { _,_ -> open(true) }.setNeutralButton("Cancel",null).show()
+            .setPositiveButton("Continue") { _,_ -> open(false) }
+            .setNegativeButton("Start Fresh") { _,_ -> open(true) }.setNeutralButton("Cancel",null).show()
         else open(true)
     }
     private fun voiceMenu(anchor: View,saved: VoiceLibrary.Voice) {
         PopupMenu(this,anchor).apply {
-            menu.add("Rename");menu.add("Delete voice")
+            menu.add("Rename");menu.add("Delete Voice")
             setOnMenuItemClickListener { item ->
                 when(item.title.toString()) {
-                    "Rename" -> editName("Rename voice",saved.name,60) { store.voices.rename(saved.id,it);draw() }
-                    else -> AlertDialog.Builder(this@MainActivity).setTitle("Delete ${saved.name}?")
-                        .setMessage("This removes the saved voice from this phone. Completed narrations stay in Library.")
-                        .setNegativeButton("Keep voice",null).setPositiveButton("Delete") { _,_ -> safely {
+                    "Rename" -> editName("Rename Voice",saved.name,60) { store.voices.rename(saved.id,it);draw() }
+                    else -> AlertDialog.Builder(this@MainActivity).setTitle("Delete “${saved.name}”?")
+                        .setMessage("This removes the voice from this phone. Narrations you already made keep their audio.")
+                        .setNegativeButton("Cancel",null).setPositiveButton("Delete") { _,_ -> safely {
                             store.voices.delete(saved.id)
                             if(store.prefs.getString("selectedVoiceId",null)==saved.id) store.prefs.edit().remove("selectedVoiceId").apply()
                             voiceEditor=false;voiceNotice="";draw()
@@ -466,118 +416,103 @@ class MainActivity : Activity() {
             };show()
         }
     }
+    private fun selectVoice(id: String) { store.prefs.edit().putString("selectedVoiceId",id).apply();draw() }
     private fun voiceScreen() {
+        if(voiceEditor) { cloneScreen();return }
         val voices=store.voices.list()
-        if(!voiceEditor) {
-            val selectedId=store.selectedVoice?.id
-            val builtIn=BuiltInVoices.catalog(this)
-            val top=row(content)
-            top.addView(label("Voices",27f,ink,true),LinearLayout.LayoutParams(0,-2,1f))
-            top.addView(button("+ Clone voice") { startNewVoice() },LinearLayout.LayoutParams(-2,-2))
-            gap(content,6);content.addView(label("${builtIn.size} built-in · ${voices.size} cloned · all run offline on this phone",13f,muted));gap(content,18)
-            if(voiceNotice.isNotBlank()) { content.addView(label(voiceNotice,13f,orange));gap(content,14) }
-            content.addView(label("MY VOICES",10f,muted,true));gap(content,8)
-            if(voices.isEmpty()) {
-                val card=column(content,true)
-                card.addView(label("Clone your own voice",16f,ink,true));gap(card,6)
-                card.addView(label("Record or import 5–10 seconds of clear speech. It becomes a reusable voice; nothing leaves your phone.",13f,muted));gap(card,12)
-                fullButton(card,"Clone a voice",true) { startNewVoice() }
-                gap(content,18)
-            }
-            voices.forEach { saved ->
-                val selected=selectedId==saved.id
-                val card=column(content,true);if(selected) card.background=shape(panel,16,orange)
-                val title=row(card)
-                title.addView(label(saved.name,18f,ink,true).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END },LinearLayout.LayoutParams(0,-2,1f))
-                lateinit var more: Button
-                more=button("⋮") { voiceMenu(more,saved) }.apply { contentDescription="Options for ${saved.name}" }
-                title.addView(more,LinearLayout.LayoutParams(dp(48),dp(48)))
-                val seconds=runCatching { AudioPeaks.durationMs(saved.reference)/1000.0 }.getOrDefault(0.0)
-                card.addView(label("Cloned · ${"%.1f".format(seconds)} sec sample${if(selected) " · Selected" else ""}",12f,if(selected) orange else muted));gap(card,12)
-                voiceActions(card,saved.id,saved.name,saved.reference,selected)
-                gap(content,12)
-            }
-            if(builtIn.isEmpty()) return
-            gap(content,10)
-            val heading=row(content)
-            heading.addView(label("BUILT-IN VOICES",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
-            if(builtIn.any { it.placeholder }) heading.addView(label("Placeholder clips · not for release",10f,Palette.error,true))
-            gap(content,8)
-            val filters=row(content)
-            listOf("All","Female","Male").forEachIndexed { index,name ->
-                if(index>0) filters.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
-                filters.addView(button(name,voiceFilter==name) { voiceFilter=name;draw() }.apply {
-                    contentDescription="Show ${name.lowercase()} voices";isSelected=voiceFilter==name
-                },LinearLayout.LayoutParams(0,-2,1f))
-            }
-            gap(content,12)
-            // Compact rows: name and description, a play button, and Use; orange marks only the selection.
-            builtIn.filter { voiceFilter=="All" || it.gender.equals(voiceFilter,true) }.forEach { entry ->
-                val selected=selectedId==entry.voiceId
-                val card=row(content).apply {
-                    background=shape(panel,14,if(selected) orange else line);setPadding(dp(14),dp(10),dp(10),dp(10))
-                }
-                val words=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-                words.addView(label(entry.name,16f,ink,true))
-                words.addView(label(entry.label,12f,if(selected) orange else muted))
-                card.addView(words,LinearLayout.LayoutParams(0,-2,1f))
-                card.addView(ImageButton(this).apply {
-                    setImageResource(R.drawable.ic_play);imageTintList=android.content.res.ColorStateList.valueOf(ink)
-                    background=shape(Palette.raised,24);contentDescription="Listen to ${entry.name}"
-                    setOnClickListener { safely { play(store.findVoice(entry.voiceId)!!.reference,entry.name) } }
-                },LinearLayout.LayoutParams(dp(48),dp(48)).apply { setMargins(dp(8),0,dp(8),0) })
-                card.addView(button(if(selected) "Selected" else "Use",selected) {
-                    store.prefs.edit().putString("selectedVoiceId",entry.voiceId).apply();draw()
-                }.apply { contentDescription=if(selected) "${entry.name} is selected" else "Use ${entry.name}" },LinearLayout.LayoutParams(-2,-2))
-                gap(content,8)
-            }
-            return
+        val selectedId=store.selectedVoice?.id
+        val builtIn=BuiltInVoices.catalog(this)
+        pageTitle("Voices","${builtIn.size} built-in · ${voices.size} yours · all on this phone",
+            ui.iconButton(R.drawable.ic_plus,"Clone a new voice",tint=accent) { safely { startNewVoice() } })
+        statusCard()
+        if(voiceNotice.isNotBlank()) { ui.gap(content,8);content.addView(ui.subhead(voiceNotice,accent).apply { setPadding(dp(4),0,dp(4),0) }) }
+        ui.sectionHeader(content,"My Voices")
+        val mine=ui.group(content)
+        voices.forEach { saved ->
+            val selected=selectedId==saved.id
+            val seconds=runCatching { AudioPeaks.durationMs(saved.reference)/1000.0 }.getOrDefault(0.0)
+            val trailing=ui.row()
+            trailing.addView(ui.iconButton(R.drawable.ic_play,"Listen to ${saved.name}",filled=false,tint=accent) { safely { play(saved.reference,saved.name) } })
+            lateinit var more: ImageButton
+            more=ui.iconButton(R.drawable.ic_more,"Options for ${saved.name}",filled=false,tint=muted) { voiceMenu(more,saved) }
+            trailing.addView(more);trailing.addView(ui.check(selected))
+            ui.groupRow(mine,saved.name,"Cloned · ${"%.1f".format(seconds)} s sample",leading=ui.avatar(saved.name),trailing=trailing,
+                description="${saved.name}, your cloned voice${if(selected) ", selected" else ""}") { selectVoice(saved.id) }
         }
-        pageTitle("Clone a voice","Add a sample, name it, then review the spoken words.")
-        fullButton(content,"‹ Back to voices",enabled=!StudioJobs.busy) { hideKeyboard();voiceEditor=false;voiceNotice="";draw() };gap(content,14)
+        ui.groupRow(mine,"Clone a Voice","Record or import 5–10 seconds of clear speech",titleColor=accent,
+            leading=ImageView(this).apply { setImageResource(R.drawable.ic_plus);imageTintList=android.content.res.ColorStateList.valueOf(accent);background=ui.oval(Palette.raised);scaleType=ImageView.ScaleType.CENTER }) { safely { startNewVoice() } }
+        if(builtIn.isEmpty()) return
+        ui.sectionHeader(content,"Built-in")
+        ui.segmented(content,listOf("All","Female","Male"),voiceFilter) { voiceFilter=it;draw() }
+        ui.gap(content,10)
+        val list=ui.group(content)
+        builtIn.filter { voiceFilter=="All" || it.gender.equals(voiceFilter,true) }.forEach { entry ->
+            val selected=selectedId==entry.voiceId
+            val trailing=ui.row()
+            trailing.addView(ui.iconButton(R.drawable.ic_play,"Listen to ${entry.name}",filled=false,tint=accent) { safely { play(store.findVoice(entry.voiceId)!!.reference,entry.name) } })
+            trailing.addView(ui.check(selected))
+            ui.groupRow(list,entry.name,entry.label,leading=ui.avatar(entry.name,genderHue(entry)),trailing=trailing,
+                description="${entry.name}, ${entry.label}${if(selected) ", selected" else ""}") { selectVoice(entry.voiceId) }
+        }
+        if(builtIn.any { it.placeholder }) ui.sectionFooter(content,"Development placeholders. These clips are replaced with licensed recordings before release.",Palette.error)
+        else ui.sectionFooter(content,"Every voice runs offline through the same speech model.")
+    }
+    private fun cloneScreen() {
+        val voices=store.voices.list()
+        content.addView(ui.button("‹ Voices","plain") { hideKeyboard();voiceEditor=false;voiceNotice="";draw() }.apply {
+            setPadding(dp(4),0,dp(12),0);ui.setEnabled(this,!StudioJobs.busy)
+        },LinearLayout.LayoutParams(-2,-2))
+        pageTitle("New Voice","A clear 5–10 second recording works best. Nothing leaves your phone.")
+        statusCard()
         val sample=if(store.reference.isFile) runCatching { AudioFiles.read(store.reference,20) }.getOrNull() else null
-        val card=column(content,true)
-        card.addView(label("1  ·  ADD A SAMPLE",11f,orange,true));gap(card,8)
-        card.addView(label(if(sample==null) "Pick audio and we’ll choose a short sample and extract its words automatically." else "${"%.1f".format(sample.seconds)}-second sample ready",13f,muted));gap(card,8)
-        val wave=WaveformView(this,orange,muted).apply { audio=sample?.samples }
-        card.addView(wave,LinearLayout.LayoutParams(-1,dp(42)))
-        recordLabel=label(if(sample==null) "Your sample stays on this phone" else "Listen before continuing",11f,muted).also { card.addView(it) }
-        gap(card,10)
-        val actions=row(card)
-        actions.addView(button(if(recorder?.running==true) "Stop recording" else "Record sample",true) { toggleRecording() },LinearLayout.LayoutParams(0,-2,1f))
-        actions.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
-        actions.addView(button("Import audio") { chooseFile(41,"audio/*") },LinearLayout.LayoutParams(0,-2,1f))
-        if(sample!=null) { gap(card,8);fullButton(card,"Listen to reference") { play(store.reference) } }
-        val importedSource=File(cacheDir,"last-voice-source.bin")
-        if(sample!=null && importedSource.isFile) {
-            gap(card,8);fullButton(card,"Adjust sample (optional)") { safely {
+        ui.sectionHeader(content,"Sample")
+        val card=ui.group(content)
+        val inner=ui.column(card).apply { setPadding(dp(16),dp(16),dp(16),dp(16)) }
+        inner.addView(WaveformView(this,accent,Palette.faint).apply { audio=sample?.samples },LinearLayout.LayoutParams(-1,dp(48)))
+        ui.gap(inner,8)
+        recordLabel=ui.footnote(if(sample==null) "Record yourself or import a recording" else "${"%.1f".format(sample.seconds)} s sample ready").apply { gravity=Gravity.CENTER }.also { inner.addView(it,LinearLayout.LayoutParams(-1,-2)) }
+        ui.gap(inner,12)
+        val actions=ui.row(inner)
+        val recording=recorder?.running==true
+        actions.addView(ui.button(if(recording) "Stop" else "Record") { safely { toggleRecording() } }.apply {
+            setTextColor(if(recording) Palette.error else ink)
+            setCompoundDrawablesRelativeWithIntrinsicBounds(if(recording) R.drawable.ic_stop else R.drawable.ic_tab_voices,0,0,0)
+            compoundDrawableTintList=android.content.res.ColorStateList.valueOf(Palette.error);compoundDrawablePadding=dp(6)
+        },LinearLayout.LayoutParams(0,-2,1f))
+        actions.addView(Space(this),LinearLayout.LayoutParams(dp(10),1))
+        actions.addView(ui.button("Import") { safely { chooseFile(41,"audio/*") } }.apply {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_import,0,0,0)
+            compoundDrawableTintList=android.content.res.ColorStateList.valueOf(ink);compoundDrawablePadding=dp(6)
+            ui.setEnabled(this,!StudioJobs.busy && !recording)
+        },LinearLayout.LayoutParams(0,-2,1f))
+        if(sample!=null) {
+            ui.groupRow(card,"Play Sample",trailing=ui.iconButton(R.drawable.ic_play,"Play sample",filled=false,tint=accent) { safely { play(store.reference) } }) { safely { play(store.reference) } }
+            val importedSource=File(cacheDir,"last-voice-source.bin")
+            if(importedSource.isFile) ui.groupRow(card,"Adjust Sample","Choose a different part of the recording",chevron=true) { safely {
                 val copy=File.createTempFile("voice-adjust-",".bin",cacheDir)
                 importedSource.copyTo(copy,true)
                 try { showVoiceSamplePicker(copy,AudioImport.duration(copy)) } catch(e: Exception) { copy.delete();throw e }
             } }
         }
-        gap(content,18)
-        content.addView(label("2  ·  NAME YOUR VOICE",11f,orange,true));gap(content,8)
-        val name=field(content,"e.g. My narrator",store.prefs.getString("voiceName","") ?: "",key="voiceName")
-        name.filters=arrayOf(InputFilter.LengthFilter(60))
-        gap(content,18)
-        content.addView(label("3  ·  REVIEW THE WORDS",11f,orange,true));gap(content,8)
-        fullButton(content,"Extract transcript offline",enabled=!StudioJobs.busy && sample!=null) {
-            if(store.prefs.getString("transcript","").isNullOrBlank()) transcribeReference()
-            else AlertDialog.Builder(this).setTitle("Extract words again?").setMessage("This replaces your edited transcript with a new offline recognition result.")
-                .setNegativeButton("Keep edits",null).setPositiveButton("Extract") { _,_ -> safely { transcribeReference() } }.show()
-        }
-        gap(content,8)
-        val words=field(content,"The exact words spoken in your sample…",store.prefs.getString("transcript","") ?: "",4,"transcript")
-        words.filters=arrayOf(InputFilter.LengthFilter(600))
-        gap(content,6);content.addView(label("Listen to the sample and correct any missed words. Your draft saves automatically.",12f,muted))
+        ui.sectionHeader(content,"Name")
+        val name=field(content,"e.g. My Narrator",store.prefs.getString("voiceName","") ?: "",key="voiceName")
+        name.filters=arrayOf(InputFilter.LengthFilter(60));name.contentDescription="Voice name"
+        val extract=ui.button("Extract","plain") {
+            if(store.prefs.getString("transcript","").isNullOrBlank()) safely { transcribeReference() }
+            else AlertDialog.Builder(this).setTitle("Extract Words Again?").setMessage("This replaces your edited transcript with a new offline recognition result.")
+                .setNegativeButton("Keep Edits",null).setPositiveButton("Extract") { _,_ -> safely { transcribeReference() } }.show()
+        }.apply { minHeight=dp(36);minimumHeight=dp(36);setPadding(dp(8),0,0,0);textSize=15f;ui.setEnabled(this,!StudioJobs.busy && sample!=null);contentDescription="Extract transcript from sample" }
+        ui.sectionHeader(content,"Transcript",extract)
+        val words=field(content,"The exact words spoken in your sample",store.prefs.getString("transcript","") ?: "",4,"transcript")
+        words.filters=arrayOf(InputFilter.LengthFilter(600));words.contentDescription="Transcript of the sample"
+        ui.sectionFooter(content,"Listen to the sample and fix any missed words. Exact words make the voice sound right.")
         footerReady={ store.reference.isFile && name.text.isNotBlank() && words.text.isNotBlank() && voices.none { it.name.equals(name.text.toString().trim(),true) } }
         footerMessage={ when {
-            !store.reference.isFile -> "Step 1: Record or import a sample."
-            name.text.isBlank() -> "Step 2: Give your voice a name."
-            voices.any { it.name.equals(name.text.toString().trim(),true) } -> "Choose a name that isn't already saved."
-            words.text.isBlank() -> "Step 3: Extract or type the sample's words."
-            else -> "Ready to save ${name.text.toString().trim()} on this phone."
+            !store.reference.isFile -> "Record or import a sample."
+            name.text.isBlank() -> "Give your voice a name."
+            voices.any { it.name.equals(name.text.toString().trim(),true) } -> "That name is already used."
+            words.text.isBlank() -> "Extract or type the sample’s words."
+            else -> "Saves “${name.text.toString().trim()}” on this phone."
         } }
         cloneVoiceAction={
             val title=name.text.toString().trim();val transcript=words.text.toString().trim()
@@ -585,74 +520,72 @@ class MainActivity : Activity() {
             startJob("Saving your voice…",true) { context ->
                 val saved=StudioStore(context).voices.save(title,transcript,StudioStore(context).reference)
                 StudioStore(context).prefs.edit().putString("selectedVoiceId",saved.id).apply()
-                runOnUiThread { voiceEditor=false;voiceNotice="${saved.name} is ready. Tap Use voice to start creating.";scrollPositions["Voices"]=0;pageScroll?.scrollTo(0,0) }
+                runOnUiThread { voiceEditor=false;voiceNotice="${saved.name} is ready and selected.";scrollPositions["Voices"]=0;pageScroll?.scrollTo(0,0) }
                 StudioJobs.update("${saved.name} saved on this phone")
             }
         }
     }
-    private fun voiceActions(card: LinearLayout,id: String,name: String,reference: File?,selected: Boolean) {
-        val actions=row(card)
-        actions.addView(button("Listen") { play(reference ?: store.findVoice(id)!!.reference,name) }.apply { contentDescription="Listen to $name" },LinearLayout.LayoutParams(0,-2,1f))
-        actions.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
-        actions.addView(button(if(selected) "Create with $name" else "Use voice",true) {
-            store.prefs.edit().putString("selectedVoiceId",id).apply();navigate("Create")
-        }.apply { contentDescription="Use $name for new speech" },LinearLayout.LayoutParams(0,-2,1f))
-    }
     private fun narrationMenu(anchor: View,dir: File) {
         val meta=store.metadata(dir)
         PopupMenu(this,anchor).apply {
-            menu.add("Rename");if(File(dir,"full.wav").isFile) menu.add("Export WAV");menu.add("Delete narration")
+            menu.add("Rename");if(File(dir,"full.wav").isFile) menu.add("Export WAV");menu.add("Delete")
             setOnMenuItemClickListener { item ->
                 when(item.title.toString()) {
-                    "Rename" -> editName("Rename narration",meta.getString("title"),80) { store.renameProject(dir,it);draw() }
+                    "Rename" -> editName("Rename Narration",meta.getString("title"),80) { store.renameProject(dir,it);draw() }
                     "Export WAV" -> safely { export(dir) }
-                    else -> AlertDialog.Builder(this@MainActivity).setTitle("Delete narration?")
-                        .setMessage("Remove \"${meta.getString("title")}\" and its audio from this phone? Export a copy first if you want to keep it. Saved voices are unaffected.")
-                        .setNegativeButton("Keep narration",null).setPositiveButton("Delete") { _,_ -> safely { store.deleteProject(dir);draw() } }.show()
+                    else -> AlertDialog.Builder(this@MainActivity).setTitle("Delete “${meta.getString("title")}”?")
+                        .setMessage("Its audio is removed from this phone. Export a copy first if you want to keep it. Voices are unaffected.")
+                        .setNegativeButton("Cancel",null).setPositiveButton("Delete") { _,_ -> safely { store.deleteProject(dir);draw() } }.show()
                 };true
             };show()
         }
     }
     private fun libraryScreen() {
         val history=store.history()
-        pageTitle("Your library","${history.size} ${if(history.size==1) "narration" else "narrations"} saved on this phone")
+        pageTitle("Library")
+        statusCard()
         if(history.isEmpty()) {
-            val card=column(content,true);card.addView(label("Your first narration starts here",18f,ink,true));gap(card,8)
-            card.addView(label("Choose a voice and add your script. Finished audio will be ready to listen to or export here.",13f,muted));gap(card,14)
-            fullButton(card,"Create narration",true) { navigate("Create") };return
+            val empty=ui.column(content).apply { gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(24),dp(80),dp(24),0) }
+            empty.addView(ImageView(this).apply { setImageResource(R.drawable.ic_tab_library);imageTintList=android.content.res.ColorStateList.valueOf(Palette.faint) },LinearLayout.LayoutParams(dp(48),dp(48)))
+            ui.gap(empty,14);empty.addView(ui.title("No Narrations Yet").apply { gravity=Gravity.CENTER })
+            ui.gap(empty,6);empty.addView(ui.subhead("Narrations you create appear here, ready to play, edit or export.").apply { gravity=Gravity.CENTER })
+            ui.gap(empty,20);empty.addView(ui.button("Create Narration","primary") { navigate("Create") },LinearLayout.LayoutParams(-2,-2))
+            return
         }
-        val search=field(content,"Search narrations or voices",libraryQuery)
-        search.inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_FILTER
-        gap(content,14)
-        val results=column(content)
+        ui.gap(content,8)
+        val searchBox=ui.row(content).apply { background=ui.rounded(Palette.raised,10);setPadding(dp(10),0,dp(10),0) }
+        searchBox.addView(ImageView(this).apply { setImageResource(R.drawable.ic_search);imageTintList=android.content.res.ColorStateList.valueOf(muted) },LinearLayout.LayoutParams(dp(20),dp(20)))
+        val search=EditText(this).apply {
+            hint="Search";setText(libraryQuery);textSize=17f;setTextColor(ink);setHintTextColor(muted);background=null
+            setPadding(dp(8),dp(10),dp(4),dp(10));isSingleLine=true;contentDescription="Search narrations or voices"
+            inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_FILTER
+        }
+        searchBox.addView(search,LinearLayout.LayoutParams(0,-2,1f))
+        val results=ui.column(content)
         fun render() {
             results.removeAllViews()
             val query=libraryQuery.trim()
             val matches=history.mapNotNull { dir -> runCatching { dir to store.metadata(dir) }.getOrNull() }.filter { (_,meta) ->
                 query.isEmpty() || (meta.optString("title")+" "+meta.optString("voiceName")+" "+meta.optJSONArray("sections").toString()).contains(query,true)
             }
+            ui.sectionHeader(results,if(query.isEmpty()) "${matches.size} ${if(matches.size==1) "Narration" else "Narrations"}" else "Results")
             if(matches.isEmpty()) {
-                results.addView(label("No matching narrations",18f,ink,true));gap(results,8)
-                results.addView(label("Try a title, a voice name, or words from your script.",13f,muted));gap(results,12)
-                fullButton(results,"Clear search",enabled=true) { search.setText("") };return
+                results.addView(ui.subhead("No narrations match “$query”.").apply { setPadding(dp(16),0,dp(16),0) })
+                results.addView(ui.button("Clear Search","plain") { search.setText("") },LinearLayout.LayoutParams(-2,-2));return
             }
+            val list=ui.group(results)
             matches.forEach { (dir,meta) ->
-                val card=column(results,true);val header=row(card)
-                header.addView(label(meta.getString("title"),18f,ink,true).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END },LinearLayout.LayoutParams(0,-2,1f))
-                lateinit var more: Button
-                more=button("⋮") { narrationMenu(more,dir) }.apply { contentDescription="Options for narration ${meta.getString("title")}" }
-                header.addView(more,LinearLayout.LayoutParams(dp(48),dp(48)))
                 val duration=runCatching { AudioPeaks.durationMs(File(dir,"full.wav")) }.getOrDefault(0)
                 val totalChunks=meta.getJSONArray("sections").length()
                 val readyChunks=(0 until totalChunks).count { File(dir,"section-$it.wav").isFile }
-                val clock=if(File(dir,"full.wav").isFile) "%d:%02d".format(duration/60000,duration/1000%60) else "$readyChunks of $totalChunks chunks ready"
-                val voice=meta.optString("voiceName",if(meta.optBoolean("voice")) "Cloned voice" else "Default voice")
-                card.addView(label("$clock · $voice",12f,orange));gap(card,4)
-                val date=java.text.SimpleDateFormat("d MMM · HH:mm",java.util.Locale.getDefault()).format(java.util.Date(meta.optLong("created",dir.lastModified())))
-                val count=meta.getJSONArray("sections").length()
-                card.addView(label("$date · $count ${if(count==1) "chunk" else "chunks"}",11f,muted));gap(card,10)
-                card.addView(label(meta.getJSONArray("sections").optString(0),13f,muted).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END })
-                gap(card,12);fullButton(card,if(readyChunks==totalChunks) "Open" else "Continue in studio") { openStudio(dir) };gap(results,14)
+                val state=if(File(dir,"full.wav").isFile) "%d:%02d".format(duration/60000,duration/1000%60) else "$readyChunks of $totalChunks chunks"
+                val voice=meta.optString("voiceName",if(meta.optBoolean("voice")) "Cloned voice" else "Model voice")
+                val date=java.text.SimpleDateFormat("d MMM",java.util.Locale.getDefault()).format(java.util.Date(meta.optLong("created",dir.lastModified())))
+                lateinit var more: ImageButton
+                more=ui.iconButton(R.drawable.ic_more,"Options for ${meta.getString("title")}",filled=false,tint=muted) { narrationMenu(more,dir) }
+                ui.groupRow(list,meta.getString("title"),"$state · $voice · $date",trailing=more,chevron=true,
+                    description="${meta.getString("title")}, $state, $voice, $date") { safely { openStudio(dir) } }
+                    .setOnLongClickListener { narrationMenu(it,dir);true }
             }
         }
         search.addTextChangedListener(object: TextWatcher {
@@ -662,73 +595,71 @@ class MainActivity : Activity() {
         });render()
     }
     private fun manageSpeechModel() {
-        AlertDialog.Builder(this).setTitle("Speech model")
-            .setItems(arrayOf("Import model file","Download again")) { _,which ->
+        AlertDialog.Builder(this).setTitle("Speech Model")
+            .setItems(arrayOf("Import Model File","Download Again")) { _,which ->
                 if(which==0) safely { chooseFile(42,"*/*") }
-                else AlertDialog.Builder(this).setTitle("Download model again?")
-                    .setMessage("This uses about 500 MB of data. Your saved voices and narrations stay on this phone.")
+                else AlertDialog.Builder(this).setTitle("Download Again?")
+                    .setMessage("This uses about 500 MB of data. Your voices and narrations stay on this phone.")
                     .setNegativeButton("Cancel",null).setPositiveButton("Download") { _,_ -> safely { startJob("Connecting to model host…",true) { StudioJobs.download(it) } } }.show()
             }.setNegativeButton("Close",null).show()
     }
     private fun showLicenses() {
-        val text=label(assets.open("THIRD-PARTY-NOTICES.txt").bufferedReader().use { it.readText() },12f)
+        val text=ui.text(assets.open("THIRD-PARTY-NOTICES.txt").bufferedReader().use { it.readText() },12f)
         text.setPadding(dp(20),dp(16),dp(20),dp(16))
-        AlertDialog.Builder(this).setTitle("Open-source licenses").setView(ScrollView(this).apply { addView(text) }).setPositiveButton("Close",null).show()
+        AlertDialog.Builder(this).setTitle("Open-Source Licenses").setView(ScrollView(this).apply { addView(text) }).setPositiveButton("Close",null).show()
     }
     private fun setupScreen() {
-        pageTitle("Settings","Offline setup, defaults, and device settings.")
-        val card=column(content,true)
-        card.addView(label(if(store.ready) "● Ready to create offline" else "Set up offline speech",18f,if(store.ready) orange else ink,true));gap(card,8)
-        card.addView(label(if(store.ready) "Voice cloning, transcription and narration run on this phone." else "Download the speech model once. Allow at least 650 MB of free space.",13f,muted));gap(card,14)
-        fullButton(card,if(store.ready) "Create narration" else "Download speech model",true) {
-            if(store.ready) navigate("Create") else startJob("Connecting to model host…",true) { StudioJobs.download(it) }
+        pageTitle("Settings")
+        statusCard()
+        ui.sectionHeader(content,"Speech Model")
+        val model=ui.group(content)
+        ui.groupRow(model,"Status",trailing=ui.text(if(store.ready) "Ready" else "Not Installed",17f,if(store.ready) Palette.success else muted))
+        if(store.ready) ui.groupRow(model,"Manage Model Files",chevron=true) { manageSpeechModel() }
+        else {
+            ui.groupRow(model,"Download Model","About 500 MB · needs 650 MB free",titleColor=accent) { safely { startJob("Connecting to model host…",true) { StudioJobs.download(it) } } }
+            ui.groupRow(model,"Import Model File",titleColor=accent) { safely { chooseFile(42,"*/*") } }
         }
-        gap(card,8);fullButton(card,if(store.ready) "Manage model files" else "Import model file") {
-            if(store.ready) manageSpeechModel() else chooseFile(42,"*/*")
+        ui.sectionFooter(content,"Voice cloning, transcription and narration run entirely on this phone.")
+        ui.sectionHeader(content,"Defaults")
+        ui.groupRow(ui.group(content),"Quality",value=qualityName(store.prefs.getInt("steps",6)),chevron=true) { chooseQuality { draw() } }
+        ui.sectionFooter(content,"Fast Preview is for drafts. Choose Best Quality if words sound blurred.")
+        ui.sectionHeader(content,"Performance")
+        val performance=ui.group(content)
+        val threads=store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)
+        ui.groupRow(performance,"CPU Threads",value=threads.toString(),chevron=true) {
+            val values=listOf(2,4)
+            AlertDialog.Builder(this).setTitle("CPU Threads").setSingleChoiceItems(arrayOf("2 threads (recommended)","4 threads"),values.indexOf(threads)) { dialog,index ->
+                store.prefs.edit().putInt("threads",values[index]).apply();dialog.dismiss();draw()
+            }.setNegativeButton("Cancel",null).show()
         }
-        gap(content,20)
-        content.addView(label("DEFAULT QUALITY",10f,muted,true));gap(content,8)
-        lateinit var quality: Button
-        quality=button("${qualityName(store.prefs.getInt("steps",6))}  ▾") { chooseQuality { quality.text="${qualityName(store.prefs.getInt("steps",6))}  ▾" } }
-        content.addView(quality,LinearLayout.LayoutParams(-1,-2))
-        gap(content,8);content.addView(label("Fast preview is for drafts. Use Best quality if words sound blurred or incorrect.",12f,muted));gap(content,20)
-        val privacy=column(content,true)
-        privacy.addView(label("Private by design",16f,ink,true));gap(privacy,8)
-        privacy.addView(label("Your samples, transcripts and narrations stay on this phone unless you export them. Internet is used only to download the speech model.",13f,muted));gap(privacy,8)
-        privacy.addView(label("Uninstalling removes local voices and projects. Export important narrations first.",12f,muted))
-        gap(content,18)
-        fullButton(content,if(advancedSettings) "Advanced settings  ▴" else "Advanced settings  ▾") { advancedSettings=!advancedSettings;draw() }
-        if(advancedSettings) {
-            gap(content,12);val device=column(content,true)
-            val info=ActivityManager.MemoryInfo();(getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
-            device.addView(label("${Build.MANUFACTURER} ${Build.MODEL}",16f,ink,true));gap(device,6)
-            device.addView(label("${"%.1f".format(info.totalMem/1073741824.0)} GB RAM · ${if(BuildConfig.MOBILE_FAST) "Accelerated CPU" else "Compatibility CPU"}",12f,muted));gap(device,12)
-            lateinit var threads: Button
-            threads=button("${store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)} CPU threads  ▾") {
-                val values=listOf(2,4)
-                AlertDialog.Builder(this).setTitle("CPU threads").setSingleChoiceItems(arrayOf("2 threads","4 threads"),values.indexOf(store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4))) { dialog,index ->
-                    store.prefs.edit().putInt("threads",values[index]).apply();threads.text="${values[index]} CPU threads  ▾";dialog.dismiss()
-                }.setNegativeButton("Cancel",null).show()
+        if(NativeEngine.gpuPackaged(this)) {
+            val gpu=store.prefs.getBoolean("gpuExperimental",false)
+            val toggle=Switch(this).apply {
+                isChecked=gpu;isEnabled=!StudioJobs.busy;contentDescription="Experimental GPU"
+                thumbTintList=android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+                trackTintList=android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked),intArrayOf()),intArrayOf(Palette.success,Palette.raised))
+                setOnCheckedChangeListener { _,on -> store.prefs.edit().putBoolean("gpuExperimental",on).apply() }
             }
-            device.addView(threads,LinearLayout.LayoutParams(-1,-2));gap(device,8)
-            device.addView(label("Two threads is the default. Four can be a few percent faster on some phones but uses the slower cores, so it adds heat and battery drain.",12f,muted));gap(device,10)
-            if(NativeEngine.gpuPackaged(this)) {
-                val gpu=store.prefs.getBoolean("gpuExperimental",false)
-                fullButton(device,if(gpu) "Experimental GPU: On" else "Experimental GPU: Off",enabled=!StudioJobs.busy) {
-                    store.prefs.edit().putBoolean("gpuExperimental",!gpu).apply();draw()
-                };gap(device,8)
-                device.addView(label("GPU speed-up is not verified on any phone yet. If the GPU fails, Vox Studio switches back to CPU and turns this off.",12f,muted))
-                store.prefs.getString("gpuDisabledReason",null)?.takeIf { !gpu }?.let { device.addView(label("Last GPU attempt: $it",12f,muted)) }
-                gap(device,8)
-            }
-            device.addView(label("Processor: CPU${if(store.prefs.getBoolean("gpuExperimental",false) && NativeEngine.gpuPackaged(this)) " · trying GPU first" else ""}",12f,muted))
-            device.addView(label("VoxCPM 0.5B · Q4 · Native 16 kHz WAV",12f,muted))
+            ui.groupRow(performance,"Experimental GPU",trailing=toggle)
         }
-        gap(content,14);fullButton(content,"About Vox Studio",enabled=true) {
-            AlertDialog.Builder(this).setTitle("Vox Studio ${BuildConfig.VERSION_NAME}")
-                .setMessage("Offline English narration and reusable voice profiles.\n\nBuilt with OpenBMB VoxCPM, the VoxCPM.cpp runtime, and Vosk offline speech recognition. This is a development build.")
-                .setPositiveButton("Close",null).setNeutralButton("Licenses") { _,_ -> safely { showLicenses() } }.show()
-        }
+        val gpuNote=if(NativeEngine.gpuPackaged(this)) " GPU speed-up is not verified on any phone; if it fails, Vox Studio returns to CPU and turns it off." else ""
+        ui.sectionFooter(content,"Two threads suit most phones. Four can be slightly faster but uses the slower cores, adding heat and battery drain.$gpuNote")
+        store.prefs.getString("gpuDisabledReason",null)?.takeIf { NativeEngine.gpuPackaged(this) && !store.prefs.getBoolean("gpuExperimental",false) }?.let { ui.sectionFooter(content,"Last GPU attempt: $it") }
+        ui.sectionHeader(content,"This Phone")
+        val device=ui.group(content)
+        val info=ActivityManager.MemoryInfo();(getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+        ui.groupRow(device,"Model",value="${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}")
+        ui.groupRow(device,"Memory",value="${"%.1f".format(info.totalMem/1073741824.0)} GB")
+        ui.groupRow(device,"Engine",value=if(BuildConfig.MOBILE_FAST) "Accelerated CPU" else "Compatible CPU")
+        ui.groupRow(device,"Speech Model",value="VoxCPM 0.5B · Q4")
+        ui.sectionHeader(content,"Privacy")
+        val privacy=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(14)) }
+        privacy.addView(ui.subhead("Samples, transcripts and narrations stay on this phone unless you export them. The internet is used only to download the speech model. Uninstalling removes your voices and narrations, so export anything you want to keep.",ink))
+        ui.sectionHeader(content,"About")
+        val about=ui.group(content)
+        ui.groupRow(about,"Version",value=BuildConfig.VERSION_NAME)
+        ui.groupRow(about,"Open-Source Licenses",chevron=true) { safely { showLicenses() } }
+        ui.sectionFooter(content,"Built with OpenBMB VoxCPM, the VoxCPM.cpp runtime and Vosk offline speech recognition.")
     }
     private fun startJob(label: String, transfer: Boolean = false, task: (Context) -> Unit) {
         require(recorder?.active != true) { "Stop recording before starting another task." }

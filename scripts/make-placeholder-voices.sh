@@ -12,7 +12,9 @@ text=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["place
 python3 -I -c 'import json,sys
 for v in json.load(open(sys.argv[1]))["voices"]: print(v["id"]+"|"+v["placeholderSource"])' "$out/catalog.json" |
 while IFS='|' read -r id source; do
-  say -v "$source" -o "$work/$id.aiff" "$text"
+  # "Voice@rate" picks a speaking rate in words per minute; some voices clone better slower.
+  voice=${source%@*}; rate=(); [[ $source == *@* ]] && rate=(-r "${source##*@}")
+  say -v "$voice" "${rate[@]}" -o "$work/$id.aiff" "$text"
   # 16 kHz mono 16-bit PCM, the format the app records and the model reads.
   afconvert -f WAVE -d LEI16@16000 -c 1 "$work/$id.aiff" "$out/$id.wav"
   echo "$id <- $source ($(( $(stat -f%z "$out/$id.wav") / 32000 )) s)"

@@ -17,7 +17,15 @@ import java.io.File
  */
 class ChunkStudioDialog(private val activity: Activity,private val dir: File,
     private val startTask: (String,(android.content.Context)->Unit)->Unit,
-    private val export: ()->Unit,private val autoGenerate: Boolean=false): Dialog(activity,android.R.style.Theme_Material_NoActionBar) {
+    private val export: ()->Unit,private val autoGenerate: Boolean=false): Dialog(activity,if(Palette.dark) android.R.style.Theme_Material_NoActionBar else android.R.style.Theme_Material_Light_NoActionBar) {
+    /** Status and navigation bar icons follow the light or dark appearance. */
+    private fun Window.matchSystemBars() {
+        statusBarColor=Palette.bg;navigationBarColor=Palette.bg
+        if(Build.VERSION.SDK_INT>=30) {
+            val light=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            insetsController?.setSystemBarsAppearance(if(Palette.dark) 0 else light,light)
+        } else decorView.systemUiVisibility=if(Palette.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+    }
     private val store=StudioStore(activity)
     private val handler=Handler(Looper.getMainLooper())
     private var selected=0;private var loaded=-1;private var playingAll=false;private var revision=""
@@ -41,13 +49,13 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
     private fun button(value: String,primary: Boolean=false,click: ()->Unit)=Button(activity).apply {
         this.text=value;isAllCaps=false;textSize=14f;minWidth=0;minimumWidth=0;minHeight=dp(48);minimumHeight=dp(48)
         typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-        setTextColor(if(primary) Palette.bg else Palette.ink);background=shape(if(primary) Palette.accent else Palette.raised)
+        setTextColor(if(primary) Palette.bg else Palette.ink);background=shape(if(primary) Palette.ink else Palette.raised,14);stateListAnimator=null
         setPadding(dp(14),dp(6),dp(14),dp(6));setOnClickListener { guard(click) }
     }
     private fun icon(res: Int,description: String,primary: Boolean=false,click: ()->Unit)=ImageButton(activity).apply {
         setImageResource(res);contentDescription=description;scaleType=ImageView.ScaleType.CENTER
         imageTintList=ColorStateList.valueOf(if(primary) Palette.bg else Palette.ink)
-        background=shape(if(primary) Palette.accent else Palette.raised,if(primary) 28 else 12)
+        background=if(primary) shape(Palette.ink,28) else null
         setOnClickListener { guard(click) }
     }
     private fun row(parent: LinearLayout)=LinearLayout(activity).apply { gravity=Gravity.CENTER_VERTICAL;parent.addView(this,LinearLayout.LayoutParams(-1,-2)) }
@@ -62,12 +70,12 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
         super.onCreate(saved)
         val root=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(Palette.bg) }
         setContentView(root)
-        window?.apply { statusBarColor=Palette.bg;navigationBarColor=Palette.bg }
+        window?.matchSystemBars()
         val header=row(root).apply { setPadding(dp(8),dp(8),dp(16),dp(8)) }
-        header.addView(icon(R.drawable.ic_back,"Close studio") { dismiss() }.apply { background=null },LinearLayout.LayoutParams(dp(48),dp(48)))
+        header.addView(icon(R.drawable.ic_back,"Close studio") { dismiss() }.apply { imageTintList=ColorStateList.valueOf(Palette.accent) },LinearLayout.LayoutParams(dp(48),dp(48)))
         val heading=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(4),0,dp(10),0) }
-        heading.addView(text(meta().getString("title"),18f,bold=true).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END })
-        subtitle=text("",12f,Palette.muted).also { heading.addView(it) }
+        heading.addView(text(meta().getString("title"),17f,bold=true).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END })
+        subtitle=text("",13f,Palette.muted).also { heading.addView(it) }
         header.addView(heading,LinearLayout.LayoutParams(0,-2,1f))
         exportButton=button("Export") { requestExport() }
         header.addView(exportButton,LinearLayout.LayoutParams(-2,-2))
@@ -75,7 +83,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
         scroll=ScrollView(activity).apply { isFillViewport=true }
         document=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(14),dp(16),dp(24)) }
         scroll.addView(document);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        val footer=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12));background=shape(Palette.panel,0) }
+        val footer=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12));setBackgroundColor(Palette.bar) }
         root.addView(View(activity).apply { setBackgroundColor(Palette.line) },LinearLayout.LayoutParams(-1,dp(1)))
         root.addView(footer)
         progressBox=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
@@ -100,7 +108,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
             override fun onProgressChanged(b: SeekBar?,p: Int,user: Boolean) { if(user && !dragging)audio.seek((audio.duration.toLong()*p/1000).toInt()) }
         })
         val transport=row(footer)
-        position=text("0:00 / 0:00",12f,Palette.muted);transport.addView(position,LinearLayout.LayoutParams(0,-2,1f))
+        position=text("0:00 / 0:00",13f,Palette.muted);transport.addView(position,LinearLayout.LayoutParams(0,-2,1f))
         previous=icon(R.drawable.ic_prev,"Previous chunk") { select((selected-1).coerceAtLeast(0)) }
         play=icon(R.drawable.ic_play,"Play chunk",true) { if(loaded!=selected) load(true) else { playingAll=!audio.playing;audio.toggle() } }
         next=icon(R.drawable.ic_next,"Next chunk") { select((selected+1).coerceAtMost(parts().length()-1)) }
@@ -144,7 +152,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
         }
         val remaining=total-done
         primary.visibility=if(!mine && remaining>0) View.VISIBLE else View.GONE
-        primary.assign(if(done==0) "Generate all $total chunks" else "Generate $remaining remaining ${if(remaining==1) "chunk" else "chunks"}")
+        primary.assign(when { total==1 -> "Generate";done==0 -> "Generate All $total Chunks";else -> "Generate $remaining Remaining ${if(remaining==1) "Chunk" else "Chunks"}" })
         primary.isEnabled=!StudioJobs.busy
         val message=when {
             otherJob -> "Another task is running. You can listen while it finishes."
@@ -164,7 +172,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
         position.assign(if(loaded==selected) "${time(audio.position)} / ${time(audio.duration)}" else if(ready) "Chunk ${selected+1}" else "No audio yet")
         exportButton.isEnabled=!StudioJobs.busy
         exportButton.setTextColor(if(remaining==0) Palette.bg else Palette.ink)
-        exportButton.background=shape(if(remaining==0) Palette.accent else Palette.raised)
+        exportButton.background=shape(if(remaining==0) Palette.ink else Palette.raised,14)
         for(control in listOf<View>(exportButton,primary,play,previous,next,speed))control.alpha=if(control.isEnabled) 1f else .35f
     }
     private fun chunkStatus(index: Int): Pair<String,Int> = when {
@@ -181,7 +189,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
             val (status,statusColor)=chunkStatus(i)
             val card=LinearLayout(activity).apply {
                 orientation=LinearLayout.VERTICAL;setPadding(dp(14),dp(12),dp(14),dp(12))
-                background=shape(if(chosen) Palette.panel else Palette.bg,14,if(chosen) Palette.accent else Palette.line,if(chosen) 2 else 1)
+                background=shape(Palette.panel,12,if(chosen) Palette.accent else null,2)
                 isSelected=chosen;isClickable=true;isFocusable=true
                 contentDescription="Chunk ${i+1}, $status. ${chunks.getString(i)}"
                 setOnClickListener { if(selected!=i) select(i) }
@@ -190,7 +198,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
             top.addView(text("${i+1}",12f,if(chosen) Palette.accent else Palette.muted,true),LinearLayout.LayoutParams(0,-2,1f))
             top.addView(text(status,12f,statusColor,status=="Generating…"))
             gap(card,6)
-            card.addView(text(chunks.getString(i),16f,if(chosen || file(i).isFile) Palette.ink else Palette.muted))
+            card.addView(text(chunks.getString(i),17f,if(chosen || file(i).isFile) Palette.ink else Palette.muted))
             if(chosen) {
                 gap(card,12)
                 val actions=row(card)

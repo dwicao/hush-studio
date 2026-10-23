@@ -18,8 +18,8 @@ import kotlin.math.*
 /** Range editor previews the original source; conversion occurs only on acceptance. */
 class SampleAdjustmentDialog(context: Context,private val source: File,private val seconds: Double,
     initialStart: Double,initialLength: Double,private val accepted: (Double,Double)->Unit): Dialog(context) {
-    private val bg=Color.rgb(16,19,17);private val panel=Color.rgb(27,32,28)
-    private val ink=Color.rgb(241,241,229);private val muted=Color.rgb(157,170,154);private val accent=Color.rgb(242,166,90)
+    private val bg get()=Palette.panel;private val panel get()=Palette.raised
+    private val ink get()=Palette.ink;private val muted get()=Palette.muted;private val accent get()=Palette.accent
     private fun dp(n: Int)=(n*context.resources.displayMetrics.density).roundToInt()
     private var length=initialLength.coerceIn(3.0,min(20.0,seconds))
     private var at=initialStart.coerceIn(0.0,(seconds-length).coerceAtLeast(0.0))
@@ -35,11 +35,12 @@ class SampleAdjustmentDialog(context: Context,private val source: File,private v
     private lateinit var preview: Button
     private lateinit var status: TextView
     private val lengths=mutableListOf<Pair<Double,Button>>()
-    private fun shape(color: Int)=GradientDrawable().apply { setColor(color);cornerRadius=dp(16).toFloat() }
+    private fun shape(color: Int)=GradientDrawable().apply { setColor(color);cornerRadius=dp(14).toFloat() }
     private fun label(text: String,size: Float=14f,color: Int=ink)=TextView(context).apply { this.text=text;textSize=size;setTextColor(color) }
     private fun button(text: String,primary: Boolean=false,click: ()->Unit)=Button(context).apply {
-        this.text=text;isAllCaps=false;textSize=14f;setTextColor(if(primary) bg else ink)
-        background=shape(if(primary) accent else panel);minHeight=dp(48);setPadding(dp(10),0,dp(10),0)
+        this.text=text;isAllCaps=false;textSize=16f;setTextColor(if(primary) bg else ink);stateListAnimator=null
+        typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)
+        background=shape(if(primary) ink else panel);minHeight=dp(48);setPadding(dp(10),0,dp(10),0)
         setOnClickListener { click() }
     }
     private fun time(value: Double): String {
@@ -49,7 +50,7 @@ class SampleAdjustmentDialog(context: Context,private val source: File,private v
         handler.removeCallbacksAndMessages(null)
         player?.let { runCatching { it.release() } };player=null
         audio.abandonAudioFocusRequest(focus)
-        if(::preview.isInitialized) preview.text="▶  Preview sample"
+        if(::preview.isInitialized) preview.text="Preview"
     }
     private fun refresh() {
         stopPreview()
@@ -58,7 +59,7 @@ class SampleAdjustmentDialog(context: Context,private val source: File,private v
         timeline.max=((seconds-length)*10).roundToInt().coerceAtLeast(0)
         timeline.progress=(at*10).roundToInt()
         lengths.forEach { (value,button) ->
-            button.background=shape(if(abs(value-length)<.01) accent else panel)
+            button.background=shape(if(abs(value-length)<.01) ink else panel)
             button.setTextColor(if(abs(value-length)<.01) bg else ink)
             button.isSelected=abs(value-length)<.01
         }
@@ -69,13 +70,13 @@ class SampleAdjustmentDialog(context: Context,private val source: File,private v
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         val root=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;background=shape(bg);setPadding(dp(20),dp(20),dp(20),dp(14)) }
         fun gap(n: Int) { root.addView(Space(context),LinearLayout.LayoutParams(1,dp(n))) }
-        root.addView(label("Adjust voice sample",23f));gap(8)
-        root.addView(label("Choose a clear passage with one speaker. Five seconds is recommended.",13f,muted));gap(20)
+        root.addView(label("Adjust Sample",22f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD });gap(8)
+        root.addView(label("Choose a clear passage with one speaker. Five seconds is recommended.",15f,muted));gap(20)
         range=label("",26f).apply { gravity=Gravity.CENTER;setPadding(0,dp(16),0,dp(16));background=shape(panel) };root.addView(range)
         timeline=SeekBar(context).apply { contentDescription="Sample start position";progressTintList=android.content.res.ColorStateList.valueOf(accent);thumbTintList=android.content.res.ColorStateList.valueOf(accent) }
         root.addView(timeline,LinearLayout.LayoutParams(-1,dp(52)))
         status=label("",12f,muted);root.addView(status);gap(20)
-        root.addView(label("SAMPLE LENGTH",11f,muted));gap(8)
+        root.addView(label("LENGTH",13f,muted));gap(8)
         val presets=LinearLayout(context)
         listOf(5.0,10.0,20.0).forEach { value ->
             val b=button("${value.toInt()} sec") { length=min(value,seconds);refresh() }.apply { isEnabled=seconds>=value }
@@ -85,7 +86,7 @@ class SampleAdjustmentDialog(context: Context,private val source: File,private v
         for((text,delta) in listOf("−1 sec" to -1.0,"+1 sec" to 1.0)) {
             moves.addView(button(text) { at+=delta;refresh() },LinearLayout.LayoutParams(0,dp(48),1f).apply { setMargins(dp(3),0,dp(3),0) })
         };root.addView(moves);gap(12)
-        preview=button("▶  Preview sample") {
+        preview=button("Preview") {
             if(player!=null) stopPreview() else {
                 if(audio.requestAudioFocus(focus)!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     status.text="Audio is busy. Try preview again shortly."

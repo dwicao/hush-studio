@@ -24,9 +24,17 @@ class StudioPlayerDialog(
     private val exportAudio: (() -> Unit)? = null,
     private val regenerate: ((Int) -> Unit)? = null,
     private val closed: () -> Unit
-) : Dialog(activity,android.R.style.Theme_Material_NoActionBar) {
-    private val bg=Color.rgb(16,19,17);private val panel=Color.rgb(27,32,28)
-    private val ink=Color.rgb(241,241,229);private val muted=Color.rgb(157,170,154);private val orange=Color.rgb(242,166,90)
+) : Dialog(activity,if(Palette.dark) android.R.style.Theme_Material_NoActionBar else android.R.style.Theme_Material_Light_NoActionBar) {
+    private val bg get()=Palette.bg;private val panel get()=Palette.panel
+    private val ink get()=Palette.ink;private val muted get()=Palette.muted;private val orange get()=Palette.accent
+    /** Status and navigation bar icons follow the light or dark appearance. */
+    private fun Window.matchSystemBars() {
+        statusBarColor=Palette.bg;navigationBarColor=Palette.bg
+        if(Build.VERSION.SDK_INT>=30) {
+            val light=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            insetsController?.setSystemBarsAppearance(if(Palette.dark) 0 else light,light)
+        } else decorView.systemUiVisibility=if(Palette.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+    }
     private val handler=Handler(Looper.getMainLooper())
     private val worker=Executors.newSingleThreadExecutor();private var waveJob: Future<*>?=null
     private lateinit var audio: AudioPlayback
@@ -39,13 +47,14 @@ class StudioPlayerDialog(
     private val noisy=object: BroadcastReceiver() { override fun onReceive(context: Context?,intent: Intent?) { pause() } }
     private val ticker=object: Runnable { override fun run() { if(isShowing) { refresh();handler.postDelayed(this,250) } } }
     private fun dp(value: Int)=(value*activity.resources.displayMetrics.density).roundToInt()
-    private fun shape(color: Int,radius: Int=16)=GradientDrawable().apply { setColor(color);cornerRadius=dp(radius).toFloat() }
+    private fun shape(color: Int,radius: Int=12)=GradientDrawable().apply { setColor(color);cornerRadius=dp(radius).toFloat() }
     private fun text(value: String,size: Float=14f,color: Int=ink)=TextView(activity).apply { this.text=value;textSize=size;setTextColor(color);setLineSpacing(dp(2).toFloat(),1f) }
     private fun column()=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
     private fun gap(parent: LinearLayout,size: Int=10) { parent.addView(Space(activity),LinearLayout.LayoutParams(1,dp(size))) }
     private fun button(value: String,primary: Boolean=false,action: () -> Unit)=Button(activity).apply {
-        text=value;isAllCaps=false;textSize=14f;minWidth=0;minimumWidth=0;minHeight=dp(48)
-        setTextColor(if(primary) bg else ink);background=shape(if(primary) orange else Color.rgb(39,47,40),12)
+        text=value;isAllCaps=false;textSize=16f;minWidth=0;minimumWidth=0;minHeight=dp(48);stateListAnimator=null
+        typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+        setTextColor(if(primary) bg else ink);background=shape(if(primary) ink else Palette.raised,12)
         setPadding(dp(8),dp(6),dp(8),dp(6));setOnClickListener { action() }
     }
     private fun row(parent: LinearLayout)=LinearLayout(activity).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;parent.addView(this,LinearLayout.LayoutParams(-1,-2)) }
@@ -55,18 +64,18 @@ class StudioPlayerDialog(
         super.onCreate(state)
         val root=column().apply { setBackgroundColor(bg);setPadding(dp(18),dp(14),dp(18),dp(14)) }
         setContentView(root)
-        window?.apply { setBackgroundDrawable(ColorDrawable(bg));statusBarColor=bg;navigationBarColor=bg;setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN) }
+        window?.apply { setBackgroundDrawable(ColorDrawable(bg));matchSystemBars();setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN) }
         val heading=row(root)
         val headingText=column()
-        headingText.addView(text("NOW PLAYING",10f,orange));gap(headingText,4)
-        headingText.addView(text(title,23f).apply { maxLines=2;ellipsize=TextUtils.TruncateAt.END })
+        headingText.addView(text("Now Playing",13f,orange).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) });gap(headingText,2)
+        headingText.addView(text(title,28f).apply { maxLines=2;ellipsize=TextUtils.TruncateAt.END;typeface=Typeface.DEFAULT_BOLD })
         heading.addView(headingText,LinearLayout.LayoutParams(0,-2,1f))
-        heading.addView(button("✕") { dismiss() }.apply { contentDescription="Close player" },LinearLayout.LayoutParams(dp(48),dp(48)))
+        heading.addView(button("Done") { dismiss() }.apply { background=null;setTextColor(orange);contentDescription="Close player" },LinearLayout.LayoutParams(-2,dp(48)))
         gap(root,8)
-        root.addView(text(if(sections.isEmpty()) voice else "$voice · ${sections.size} sections",12f,muted));gap(root,16)
+        root.addView(text(if(sections.isEmpty()) voice else "$voice · ${sections.size} sections",15f,muted));gap(root,16)
         val card=column().apply { background=shape(panel);setPadding(dp(14),dp(12),dp(14),dp(14)) }
         root.addView(card,LinearLayout.LayoutParams(-1,-2))
-        mode=button(if(sections.isEmpty()) "Voice sample" else "Full narration  ▾") { if(sections.isNotEmpty()) chooseTrack() }
+        mode=button(if(sections.isEmpty()) "Voice Sample" else "Full Narration") { if(sections.isNotEmpty()) chooseTrack() }
         mode.isEnabled=sections.isNotEmpty();card.addView(mode,LinearLayout.LayoutParams(-1,dp(42)))
         gap(card,8)
         waveform=PlaybackWaveform(activity,orange,muted)
@@ -92,23 +101,23 @@ class StudioPlayerDialog(
         times.addView(elapsed,LinearLayout.LayoutParams(0,-2,1f));times.addView(total)
         gap(card,12)
         val transport=row(card)
-        backTen=button("−10s") { audio.skip(-10000);refresh() }.apply { contentDescription="Rewind ten seconds" }
-        toggle=button("▶ Play",true) { audio.toggle();refresh() }.apply { contentDescription="Play audio" }
-        forwardTen=button("+10s") { audio.skip(10000);refresh() }.apply { contentDescription="Forward ten seconds" }
+        backTen=button("−10 s") { audio.skip(-10000);refresh() }.apply { contentDescription="Rewind ten seconds" }
+        toggle=button("Play",true) { audio.toggle();refresh() }.apply { contentDescription="Play audio" }
+        forwardTen=button("+10 s") { audio.skip(10000);refresh() }.apply { contentDescription="Forward ten seconds" }
         add(transport,backTen);add(transport,toggle,1.5f);add(transport,forwardTen)
         gap(card,8)
         val secondary=row(card)
-        previous=button("‹ Previous") { select(selected-1,audio.playing) }
-        speed=button("1× speed") { chooseSpeed() }
-        next=button("Next ›") { select(selected+1,audio.playing) }
+        previous=button("Previous") { select(selected-1,audio.playing) }
+        speed=button("1×") { chooseSpeed() }
+        next=button("Next") { select(selected+1,audio.playing) }
         if(sections.isNotEmpty()) add(secondary,previous)
         add(secondary,speed)
         if(sections.isNotEmpty()) add(secondary,next)
         status=text("Preparing audio…",12f,muted);gap(card,8);card.addView(status)
         gap(root,16)
         val listHeading=row(root)
-        listHeading.addView(text(if(sections.isEmpty()) "VOICE PREVIEW" else "SCRIPT SECTIONS",11f,orange),LinearLayout.LayoutParams(0,-2,1f))
-        if(sections.isNotEmpty()) listHeading.addView(text("Tap a section to listen",11f,muted))
+        listHeading.addView(text(if(sections.isEmpty()) "VOICE PREVIEW" else "SECTIONS",13f,muted),LinearLayout.LayoutParams(0,-2,1f))
+        if(sections.isNotEmpty()) listHeading.addView(text("Tap to listen",13f,muted))
         gap(root,8)
         val scroll=ScrollView(activity).apply { isFillViewport=true }
         list=column();scroll.addView(list);root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
@@ -133,7 +142,7 @@ class StudioPlayerDialog(
         if(index !in -1 until sections.size) return
         selected=index
         val file=if(index<0) full else sections[index].second
-        mode.text=if(sections.isEmpty()) "Voice sample" else if(index<0) "Full narration  ▾" else "Section ${index+1} of ${sections.size}  ▾"
+        mode.text=if(sections.isEmpty()) "Voice Sample" else if(index<0) "Full Narration" else "Section ${index+1} of ${sections.size}"
         audio.load(file,autoPlay)
         waveform.peaks=FloatArray(96)
         waveJob?.cancel(true)
@@ -167,12 +176,12 @@ class StudioPlayerDialog(
         sections.forEachIndexed { index,item ->
             val card=column().apply {
                 setPadding(dp(14),dp(12),dp(14),dp(12))
-                background=shape(if(index==selected) Color.rgb(49,44,31) else panel,12)
+                background=shape(panel,12).apply { if(index==selected) setStroke(dp(2),orange) }
             }
             val header=row(card)
             header.addView(text("%02d".format(index+1),12f,if(index==selected) orange else muted),LinearLayout.LayoutParams(0,-2,1f))
-            header.addView(text(if(index==selected) "SELECTED" else "LISTEN  ▶",10f,orange))
-            gap(card,6);card.addView(text(item.first,14f))
+            header.addView(text(if(index==selected) "Selected" else "Play",13f,orange))
+            gap(card,6);card.addView(text(item.first,16f))
             card.contentDescription="Section ${index+1}. ${item.first}. Tap to listen."
             card.isFocusable=true;card.setOnClickListener { select(index,true) }
             if(index==selected && regenerate!=null) {
@@ -192,12 +201,12 @@ class StudioPlayerDialog(
         if(!::audio.isInitialized) return
         val canPlay=!audio.loading
         toggle.isEnabled=canPlay;backTen.isEnabled=canPlay && audio.duration>0;forwardTen.isEnabled=backTen.isEnabled;seek.isEnabled=backTen.isEnabled
-        toggle.show(if(audio.playing) "Ⅱ Pause" else "▶ Play")
+        toggle.show(if(audio.playing) "Pause" else "Play")
         val toggleDescription=if(audio.playing) "Pause audio" else "Play audio"
         if(toggle.contentDescription!=toggleDescription) toggle.contentDescription=toggleDescription
         previous.isEnabled=selected>=0
         next.isEnabled=sections.isNotEmpty() && selected<sections.lastIndex
-        speed.show("${audio.speed.toString().removeSuffix(".0")}× speed")
+        speed.show("${audio.speed.toString().removeSuffix(".0")}×")
         speed.isEnabled=!audio.loading
         status.show(audio.error ?: when { audio.loading -> "Preparing audio…";audio.playing -> "Playing";audio.position>=audio.duration && audio.duration>0 -> "Finished · tap Play to replay";audio.position>0 -> "Paused";else -> "Ready to play" })
         if(!dragging) {
