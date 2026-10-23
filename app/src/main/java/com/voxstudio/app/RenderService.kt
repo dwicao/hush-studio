@@ -49,10 +49,20 @@ object StudioJobs {
     fun dismissError() { lastError=null;revision++ }
     fun update(message: String, percent: Int = -1) { status = message; progress = percent; revision++ }
     fun run(service: RenderService, task: (Context) -> Unit) = executor.execute {
+        releaseRequest++
         try { task(service.applicationContext) }
         catch (_: CancellationException) { update("Stopped. Completed projects are in your library.") }
         catch (e: Exception) { reportFailure(e.message ?: "The task could not finish.") }
-        finally { generation.finish(); busy = false; progress = -1; revision++; service.finishJob() }
+        finally { generation.finish(); busy = false; progress = -1; revision++; service.finishJob(); scheduleModelRelease(MODEL_IDLE_MS) }
+    }
+    // The model (~0.5 GB) stays loaded briefly so follow-up chunk edits skip the reload,
+    // then is freed. Release runs on the job thread so it never races a synthesis.
+    private const val MODEL_IDLE_MS = 90_000L
+    @Volatile private var releaseRequest = 0
+    private val releaseTimer = Handler(Looper.getMainLooper())
+    fun scheduleModelRelease(delayMs: Long) {
+        val request = ++releaseRequest
+        releaseTimer.postDelayed({ executor.execute { if (!busy && request == releaseRequest) NativeEngine.release() } }, delayMs)
     }
     fun checkStop() { if (stop) throw CancellationException() }
     fun download(context: Context) {
@@ -122,20 +132,45 @@ object StudioJobs {
         rebuild(dir,parts.length()); lastProject = dir.name
         update("Section ${index+1} regenerated · export updated")
     }
+    /** Chunk-studio view of the running job: project, chunk being rendered and chunks still queued. */
+    @Volatile var chunkProject: String?=null; private set
+    @Volatile var activeChunk=-1; private set
+    @Volatile var queuedChunks: Set<Int> = emptySet(); private set
     fun generateChunks(context: Context,dir: File,indices: List<Int>,fresh: Boolean=false) {
         val store=StudioStore(context);require(store.ready) { "Set up the speech model first." }
         val meta=store.metadata(dir);val parts=meta.getJSONArray("sections")
         require(indices.isNotEmpty() && indices.all { it in 0 until parts.length() })
+        requireSpace(store);requireMemory(context)
         generation.startProject(indices.size)
-        indices.forEachIndexed { position,index ->
-            checkStop();generation.startSection(position+1);update("Generating chunk ${index+1} of ${parts.length()}…")
-            val audio=File(dir,"section-$index.wav")
-            if(fresh && audio.exists()) audio.copyTo(File(dir,"section-$index.previous-${System.currentTimeMillis()}.wav"))
-            render(store,dir,index,parts.getString(index),meta.optString("transcript"),meta.getBoolean("voice"),meta.getInt("steps"),!fresh)
-            generation.sectionDone();checkStop()
-        }
+        chunkProject=dir.name;queuedChunks=indices.toSet()
+        try {
+            indices.forEachIndexed { position,index ->
+                checkStop();generation.startSection(position+1);activeChunk=index
+                update(if(indices.size==1) "Generating chunk ${index+1}" else "Generating chunk ${index+1} · ${position+1} of ${indices.size}")
+                val audio=File(dir,"section-$index.wav")
+                if(fresh && audio.exists()) archiveTake(dir,index)
+                render(store,dir,index,parts.getString(index),meta.optString("transcript"),meta.getBoolean("voice"),meta.getInt("steps"),!fresh)
+                queuedChunks=queuedChunks-index
+                generation.sectionDone();checkStop()
+            }
+        } finally { activeChunk=-1;queuedChunks=emptySet() }
         if((0 until parts.length()).all { File(dir,"section-$it.wav").isFile }) rebuild(dir,parts.length())
-        lastProject=dir.name;update("Selected chunks are ready")
+        lastProject=dir.name
+        val ready=(0 until parts.length()).count { File(dir,"section-$it.wav").isFile }
+        update(if(ready==parts.length()) "All ${parts.length()} chunks ready · export available" else "$ready of ${parts.length()} chunks ready")
+    }
+    /** Keeps the three most recent previous takes per chunk so regenerating never grows storage without bound. */
+    fun archiveTake(dir: File,index: Int) {
+        File(dir,"section-$index.wav").copyTo(File(dir,"section-$index.previous-${System.currentTimeMillis()}.wav"))
+        ChunkProjects.pruneTakes(dir,"section-$index")
+    }
+    /** Refuse to start when the phone is already short of memory, instead of being killed mid-chunk. */
+    private fun requireMemory(context: Context) {
+        val info=ActivityManager.MemoryInfo();(context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+        require(info.availMem>700L*1024*1024 || NativeEngine.modelLoaded) { "Not enough free memory to load the speech model (${info.availMem/1048576} MB free). Close other apps and try again." }
+    }
+    private fun requireSpace(store: StudioStore) {
+        require(store.projects.usableSpace>64L*1024*1024) { "Your phone is almost out of storage. Free at least 64 MB, then try again." }
     }
     private fun render(store: StudioStore, dir: File, index: Int, text: String, transcript: String, voice: Boolean, steps: Int, reuse: Boolean = true) {
         val temp = File(dir,"section-$index.part.wav")
@@ -155,14 +190,27 @@ object StudioJobs {
                 if (voice) transcript else null,text,temp.absolutePath,steps,store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4).coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(4)))
         } finally { nativeActive=false }
         val nativeMs=SystemClock.elapsedRealtime()-start
+        val modelReused=NativeEngine.lastRunReusedModel
         checkStop()
+        if(error.contains("Failed to load GGUF") || error.contains("Failed to initialize")) {
+            // A model that verified at install can still be damaged later; re-check before blaming the script.
+            if(!StudioStore.verify(store.model)) {
+                store.prefs.edit().putBoolean("modelVerified",false).apply()
+                throw IllegalStateException("The speech model file is damaged. Download or import it again in Settings. Your voices and projects are safe.")
+            }
+        }
         require(error.isBlank()) { error }
         val wave = AudioFiles.read(temp)
         require(wave.samples.isNotEmpty() && wave.rate == 16000) { "Model returned invalid audio." }
         check(temp.renameTo(File(dir,"section-$index.wav"))) { "Could not save section." }
         cache.save(key,File(dir,"section-$index.wav"))
         val stageTimes = generation.snapshot().stageTimes.entries.joinToString("\n") { "${it.key}=${it.value}" }
-        File(dir,"timing-$index.txt").writeText("generation_ms=${SystemClock.elapsedRealtime()-start}\naudio_seconds=${wave.seconds}\nnative_rate=16000\nnative_ms=$nativeMs\nvalidation_ms=${SystemClock.elapsedRealtime()-start-nativeMs}\n$stageTimes\n")
+        File(dir,"timing-$index.txt").writeText("generation_ms=${SystemClock.elapsedRealtime()-start}\naudio_seconds=${wave.seconds}\nnative_rate=16000\nnative_ms=$nativeMs\nvalidation_ms=${SystemClock.elapsedRealtime()-start-nativeMs}\nmodel_reused=$modelReused\n$stageTimes\n")
+    }
+    fun assemble(context: Context, dir: File) {
+        val count=StudioStore(context).metadata(dir).getJSONArray("sections").length()
+        require((0 until count).all { File(dir,"section-$it.wav").isFile }) { "Generate every chunk before exporting." }
+        rebuild(dir,count);update("Narration assembled · tap Export again")
     }
     private fun rebuild(dir: File, count: Int) {
         val temp = File(dir,"full.part.wav")

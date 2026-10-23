@@ -59,31 +59,50 @@ object NativeEngine {
     @Volatile private var gpuFailed=false
     @Volatile private var runningGpu=false
     private var benchmarkSeed=-1
+    /** True when this APK ships the separate GPU engine. Checked by file so the main process never loads it. */
+    fun gpuPackaged(context: Context)=File(context.applicationInfo.nativeLibraryDir,"libvoxstudio_gpu.so").isFile
+    /**
+     * GPU is never attempted automatically: no device has passed full end-to-end qualification.
+     * It runs only when the user opts in to the experimental setting, and any failure turns the
+     * setting off again so later generations (and app updates) never repeat a failed probe.
+     */
+    fun gpuEnabled(context: Context)=gpuPackaged(context) && context.getSharedPreferences("studio",Context.MODE_PRIVATE).getBoolean("gpuExperimental",false)
     fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
-        val prefs=appContext?.getSharedPreferences("studio",Context.MODE_PRIVATE)
-        val deviceBuild=android.os.Build.FINGERPRINT+BuildConfig.VERSION_NAME
-        val disabled=prefs?.getString("gpuDisabledBuild",null)==deviceBuild
-        if(backendForTesting!="cpu" && (!gpuFailed && !disabled || backendForTesting=="gpu") && appContext!=null) {
+        val context=appContext
+        val prefs=context?.getSharedPreferences("studio",Context.MODE_PRIVATE)
+        val tryGpu=context!=null && when(backendForTesting) { "gpu" -> true; "cpu" -> false; else -> !gpuFailed && gpuEnabled(context) }
+        if(tryGpu) {
             runningGpu=true
-            val error=try { GpuWorkerClient.synthesize(appContext!!,android.os.Bundle().apply {
+            StudioJobs.update("Trying experimental GPU · CPU takes over if it fails")
+            val error=try { GpuWorkerClient.synthesize(context!!,android.os.Bundle().apply {
                 putString("model",model);putString("reference",reference);putString("transcript",transcript)
                 putString("text",text);putString("output",output);putInt("steps",steps);putInt("threads",threads);putInt("seed",benchmarkSeed)
             }) } finally { runningGpu=false }
             if(error.isBlank() || backendForTesting=="gpu" || StudioJobs.stop) return error
             gpuFailed=true
-            prefs?.edit()?.putString("gpuDisabledBuild",deviceBuild)?.putString("gpuDisabledReason",error.take(250))?.apply()
-            StudioJobs.update("GPU unavailable for this model · using CPU")
-            java.io.File(output).delete()
+            prefs?.edit()?.putBoolean("gpuExperimental",false)?.putString("gpuDisabledReason",error.take(250))?.apply()
+            StudioJobs.update("GPU did not work on this phone · continuing on CPU")
+            File(output).delete()
         }
         if(backendForTesting=="gpu") return "GPU backend unavailable"
-        return NativeCpuEngine.synthesize(model,reference,transcript,text,output,steps,threads)
+        // The native seed is consumed per call; reapply it so multi-chunk benchmarks stay repeatable.
+        if(benchmarkSeed>=0) NativeCpuEngine.setBenchmarkSeedForTesting(benchmarkSeed)
+        val error=NativeCpuEngine.synthesize(model,reference,transcript,text,output,steps,threads)
+        // Native code keeps the model after success or a user stop and frees it after other failures.
+        modelLoaded=error.isBlank() || error.contains("stopped by user")
+        return error
     }
     fun cancel() { if(runningGpu) GpuWorkerClient.cancel() else NativeCpuEngine.cancel() }
     fun setBenchmarkSeedForTesting(seed: Int) {
         benchmarkSeed=seed
         NativeCpuEngine.setBenchmarkSeedForTesting(seed)
-
     }
+    /** Frees the loaded CPU model; the next synthesis reloads it from the verified file. */
+    fun release() { if(NativeCpuEngine.available) NativeCpuEngine.release();modelLoaded=false }
+    fun releaseForTesting()=release()
+    /** True while the CPU model stays resident between chunks (see StudioJobs.scheduleModelRelease). */
+    @Volatile var modelLoaded=false; internal set
+    val lastRunReusedModel get()=NativeCpuEngine.available && !runningGpu && NativeCpuEngine.lastRunReusedModel()
 }
 object NativeCpuEngine {
     val available: Boolean = !BuildConfig.MOBILE_FAST || CpuCapabilities.supportsFast()
@@ -97,8 +116,12 @@ object NativeCpuEngine {
         return nativeSynthesize(model,reference,if(reference!=null) SpeechText.referencePrompt(transcript ?: "") else transcript,text,output,steps,threads)
     }
     fun cancel() { if (available) nativeCancel() }
+    fun release() { if (available) nativeRelease() }
+    fun lastRunReusedModel()=available && nativeLastRunReusedModel()
     private external fun nativeSynthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String
     private external fun nativeCancel()
+    private external fun nativeRelease()
+    private external fun nativeLastRunReusedModel(): Boolean
     // Used only by the repeatable device benchmark. Normal rendering stays stochastic.
     fun setBenchmarkSeedForTesting(seed: Int) { require(available);nativeBenchmarkSeed(seed) }
     private external fun nativeBenchmarkSeed(seed: Int)
@@ -115,8 +138,10 @@ object NativeGpuEngine {
         return nativeSynthesize(model,reference,if(reference!=null) SpeechText.referencePrompt(transcript ?: "") else transcript,text,output,steps,threads)
     }
     fun cancel() { if (available) nativeCancel() }
+    fun release() { if (available) nativeRelease() }
     private external fun nativeSynthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String
     private external fun nativeCancel()
+    private external fun nativeRelease()
     // Used only by the repeatable device benchmark. Normal rendering stays stochastic.
     fun setBenchmarkSeedForTesting(seed: Int) { require(available);nativeBenchmarkSeed(seed) }
     private external fun nativeBenchmarkSeed(seed: Int)

@@ -29,6 +29,8 @@ class GpuWorkerService: Service() {
                         NativeGpuEngine.synthesize(b.getString("model")!!,b.getString("reference"),b.getString("transcript"),b.getString("text")!!,b.getString("output")!!,b.getInt("steps"),b.getInt("threads"))
                     }
                 } catch(e: Throwable) { e.message ?: "GPU execution failed" }
+                // The :gpu process outlives the request; never leave a second model copy resident.
+                if(NativeGpuEngine.available) runCatching { NativeGpuEngine.release() }
                 progress=null
                 try { reply.send(Message.obtain(null,1).apply { data=Bundle().apply { putString("error",error) } }) } catch(_: RemoteException) {}
             };true
