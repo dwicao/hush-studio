@@ -29,8 +29,8 @@ class SpeechQualityDiagnosticTest {
                 android.util.Log.i("VoxQualityTest",row.toString())
             }
         }
-        val reference=File(out,"reference-5.4s.wav")
-        AudioFiles.reference(store.selectedVoice!!.reference,reference,0.0,5.4)
+        val reference=File(out,"reference-5s.wav")
+        AudioFiles.reference(store.selectedVoice?.reference ?: store.reference,reference,0.0,5.0)
         val words=SpeechTranscriber.transcribe(context,reference)
         val text="So, I built a PC and attached it to the back of my phone."
         for((name,steps,cloned) in listOf(Triple("short-reference-4",4,true),Triple("short-reference-10",10,true),Triple("default-voice-10",10,false))) {

@@ -42,7 +42,7 @@ class ChunkStudioTest {
         try { StudioJobs.generateChunks(context,dir,listOf(0)) } finally { NativeEngine.backendForTesting="auto" }
         val activity=inst.startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         inst.runOnMainSync {
-            activity.javaClass.getDeclaredMethod("openStudio",File::class.java).apply { isAccessible=true }.invoke(activity,dir)
+            activity.javaClass.getDeclaredMethod("openStudio",File::class.java,Boolean::class.javaPrimitiveType).apply { isAccessible=true }.invoke(activity,dir,false)
         }
         inst.waitForIdleSync()
         println("Preview project: ${dir.name}")

@@ -11,7 +11,8 @@ import java.io.File
 class AudioPlaybackTest {
     @Test fun playerCanPauseSeekChangeSpeedAndRelease() {
         val inst=InstrumentationRegistry.getInstrumentation()
-        val source=File(StudioStore(inst.targetContext).history().first(),"full.wav")
+        // Studio projects can be partial; play the newest one that has a full export.
+        val source=StudioStore(inst.targetContext).history().map { File(it,"full.wav") }.first { it.isFile }
         lateinit var player: AudioPlayback
         val ready=CountDownLatch(1)
         inst.runOnMainSync {

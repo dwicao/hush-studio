@@ -13,3 +13,8 @@ local.properties
 dev-deps/
 models/
 artifacts/
+
+# Signing material never belongs in the repository
+keystore.properties
+*.jks
+*.keystore

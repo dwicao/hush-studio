@@ -1,9 +1,16 @@
+import java.util.Properties
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 val mobileOpenCl = providers.gradleProperty("mobileOpenCl").orNull == "true"
 val mobileGpu = providers.gradleProperty("mobileGpu").orNull == "true"
 val mobileFast = providers.gradleProperty("mobileFast").orNull == "true"
 // Side-by-side test install that never touches the user's com.voxstudio.app data.
 val devInstall = providers.gradleProperty("devInstall").orNull == "true"
+// Release signing comes from an untracked keystore.properties (storeFile, storePassword, keyAlias,
+// keyPassword). Without it, release builds are produced unsigned and cannot be installed.
+val releaseKeys = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
 android {
     namespace = "com.voxstudio.app"
     compileSdk = 36
@@ -26,7 +33,13 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildTypes {
         debug { if (devInstall) { applicationIdSuffix = ".dev"; resValue("string", "app_name", "Vox Studio Dev") } else resValue("string", "app_name", "Vox Studio") }
-        release { isMinifyEnabled = false; resValue("string", "app_name", "Vox Studio") }
+        release {
+            isMinifyEnabled = false; resValue("string", "app_name", "Vox Studio")
+            signingConfig = releaseKeys?.let { keys: Properties -> signingConfigs.create("release") {
+                storeFile = rootProject.file(keys.getProperty("storeFile")); storePassword = keys.getProperty("storePassword")
+                keyAlias = keys.getProperty("keyAlias"); keyPassword = keys.getProperty("keyPassword")
+            } }
+        }
     }
     packaging { jniLibs { useLegacyPackaging = false; excludes += "**/libOpenCL.so" } }
     lint { abortOnError = true }
