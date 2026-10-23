@@ -47,6 +47,7 @@ class NativeSmokeTest {
         val store=StudioStore(context);assertTrue(store.ready)
         val output=File(context.cacheDir,"repeatable-benchmark.wav")
         val args=InstrumentationRegistry.getArguments()
+        NativeEngine.backendForTesting=args.getString("benchBackend") ?: "auto"
         val threads=args.getString("benchThreads")?.toIntOrNull() ?: 4
         val steps=args.getString("benchSteps")?.toIntOrNull() ?: 10
         try {

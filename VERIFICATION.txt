@@ -1,3 +1,8 @@
+VOX STUDIO 0.1.12 — automatic backend prototype
+See GPU-EXPERIMENT.txt for qualification results. Full GPU narration remains
+unqualified on Moto G71. CPU retry after actual GPU process death passed; a
+subsequent automatic CPU generation passed. Builds/lint/13 host tests passed.
+
 VOX STUDIO 0.1.11 — targeted speed improvements
 
 Installed fast build on Moto G71. Import reads metadata and decodes only the

@@ -291,7 +291,7 @@ VoxCPMBackend::VoxCPMBackend(BackendType type, int n_threads)
 
     const bool enable_scheduler = env_flag_enabled("VOXCPM_ENABLE_SCHEDULER");
     const bool disable_scheduler = env_flag_enabled("VOXCPM_DISABLE_SCHEDULER");
-    if (is_gpu_ && enable_scheduler && !disable_scheduler) {
+    if (is_gpu_ && (enable_scheduler || type_==BackendType::OpenCL) && !disable_scheduler) {
         cpu_backend_ = init_aux_cpu_backend_handle(n_threads_);
         sched_graph_size_ = GGML_DEFAULT_GRAPH_SIZE;
 
@@ -421,7 +421,12 @@ VoxCPMBackend& VoxCPMBackend::operator=(VoxCPMBackend&& other) noexcept {
 // =============================================================================
 
 ggml_backend_buffer_t VoxCPMBackend::alloc_buffer(ggml_context* ctx, BufferUsage usage) {
-    ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(backend_);
+    // OpenCL cannot execute every state-mutating op. Keep persistent writable
+    // state in CPU-owned memory so scheduler CPU assignments can write it;
+    // scheduler copies inputs to GPU for supported operators. Weights stay shared.
+    const bool host_state=type_==BackendType::OpenCL && cpu_backend_ &&
+        (usage==BufferUsage::State || usage==BufferUsage::KVCache || usage==BufferUsage::Output);
+    ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(host_state ? cpu_backend_ : backend_);
     ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors_from_buft(ctx, buft);
 
     if (!buffer) {
@@ -478,7 +483,7 @@ void VoxCPMBackend::reset_request_state() {
 }
 
 void VoxCPMBackend::reserve_compute_memory(ggml_cgraph* graph, const char* stage) {
-    const bool use_scheduler = sched_ != nullptr && stage_should_use_scheduler(stage);
+    const bool use_scheduler = sched_ != nullptr && (type_==BackendType::OpenCL || stage_should_use_scheduler(stage));
     graph_scheduler_modes_[graph] = use_scheduler;
 
     if (use_scheduler) {
@@ -554,12 +559,22 @@ void VoxCPMBackend::alloc_graph(ggml_cgraph* graph, const char* stage) {
     const auto it_mode = graph_scheduler_modes_.find(graph);
     const bool use_scheduler = it_mode != graph_scheduler_modes_.end()
         ? it_mode->second
-        : (sched_ != nullptr && stage_should_use_scheduler(stage));
+        : (sched_ != nullptr && (type_==BackendType::OpenCL || stage_should_use_scheduler(stage)));
     graph_scheduler_modes_[graph] = use_scheduler;
 
     if (use_scheduler) {
         const size_t before = compute_buffer_size();
         ggml_backend_sched_reset(sched_);
+        if(type_==BackendType::OpenCL) {
+            // Explicitly assign CPU-owned writes to CPU. These views cannot move
+            // to an OpenCL allocation without changing persistent-state ownership.
+            for(int i=0;i<ggml_graph_n_nodes(graph);++i) {
+                auto node=ggml_graph_node(graph,i);
+                auto root=node;while(root->view_src)root=root->view_src;
+                if(root->buffer && ggml_backend_buffer_is_host(root->buffer))
+                    ggml_backend_sched_set_tensor_backend(sched_,node,cpu_backend_);
+            }
+        }
         const bool ok = ggml_backend_sched_alloc_graph(sched_, graph);
         if (!ok) {
             throw Error(ErrorCode::OutOfMemory, "Failed to allocate graph with backend scheduler");

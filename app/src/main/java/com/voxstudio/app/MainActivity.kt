@@ -599,6 +599,9 @@ class MainActivity : Activity() {
             }
             device.addView(threads,LinearLayout.LayoutParams(-1,dp(48)));gap(device,8)
             device.addView(label("More threads can be slower. Two is the accelerated build's default.",12f,muted));gap(device,10)
+            val disabled=store.prefs.getString("gpuDisabledBuild",null)==Build.FINGERPRINT+BuildConfig.VERSION_NAME
+            device.addView(label(if(disabled) "Processor: CPU · GPU compatibility fallback" else "Processor: Automatic GPU / CPU",12f,muted))
+            if(disabled) device.addView(label("GPU execution did not pass on this device. CPU is selected automatically.",12f,muted))
             device.addView(label("VoxCPM 0.5B · Q4 · Native 16 kHz WAV",12f,muted))
         }
         gap(content,14);fullButton(content,"About Vox Studio",enabled=true) {

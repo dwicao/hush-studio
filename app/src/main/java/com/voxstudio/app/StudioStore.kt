@@ -7,6 +7,7 @@ import java.io.File
 import java.security.MessageDigest
 
 class StudioStore(val context: Context) {
+    init { NativeEngine.appContext=context.applicationContext }
     val prefs = context.getSharedPreferences("studio", Context.MODE_PRIVATE)
     val model get() = File(context.filesDir, "model/voxcpm-0.5b-q4_k.gguf")
     val voices get() = VoiceLibrary(File(context.filesDir,"voices"))
@@ -52,11 +53,62 @@ object CpuCapabilities {
     external fun supportsFast(): Boolean
 }
 object NativeEngine {
+    var appContext: Context?=null
+    val available get()=NativeCpuEngine.available
+    @Volatile var backendForTesting="auto"
+    @Volatile private var gpuFailed=false
+    @Volatile private var runningGpu=false
+    private var benchmarkSeed=-1
+    fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
+        val prefs=appContext?.getSharedPreferences("studio",Context.MODE_PRIVATE)
+        val deviceBuild=android.os.Build.FINGERPRINT+BuildConfig.VERSION_NAME
+        val disabled=prefs?.getString("gpuDisabledBuild",null)==deviceBuild
+        if(backendForTesting!="cpu" && (!gpuFailed && !disabled || backendForTesting=="gpu") && appContext!=null) {
+            runningGpu=true
+            val error=try { GpuWorkerClient.synthesize(appContext!!,android.os.Bundle().apply {
+                putString("model",model);putString("reference",reference);putString("transcript",transcript)
+                putString("text",text);putString("output",output);putInt("steps",steps);putInt("threads",threads);putInt("seed",benchmarkSeed)
+            }) } finally { runningGpu=false }
+            if(error.isBlank() || backendForTesting=="gpu" || StudioJobs.stop) return error
+            gpuFailed=true
+            prefs?.edit()?.putString("gpuDisabledBuild",deviceBuild)?.putString("gpuDisabledReason",error.take(250))?.apply()
+            StudioJobs.update("GPU unavailable for this model · using CPU")
+            java.io.File(output).delete()
+        }
+        if(backendForTesting=="gpu") return "GPU backend unavailable"
+        return NativeCpuEngine.synthesize(model,reference,transcript,text,output,steps,threads)
+    }
+    fun cancel() { if(runningGpu) GpuWorkerClient.cancel() else NativeCpuEngine.cancel() }
+    fun setBenchmarkSeedForTesting(seed: Int) {
+        benchmarkSeed=seed
+        NativeCpuEngine.setBenchmarkSeedForTesting(seed)
+
+    }
+}
+object NativeCpuEngine {
     val available: Boolean = !BuildConfig.MOBILE_FAST || CpuCapabilities.supportsFast()
-    init { if (available) System.loadLibrary("voxstudio") }
+    init { if (available) System.loadLibrary("voxstudio_cpu") }
     @Suppress("unused")
     fun onProgress(stage: String, current: Int, total: Int, audioSeconds: Double) {
         StudioJobs.nativeProgress(stage,current,total,audioSeconds)
+    }
+    fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
+        require(available) { "This device needs the compatibility APK; its CPU lacks FP16/dot-product instructions." }
+        return nativeSynthesize(model,reference,if(reference!=null) SpeechText.referencePrompt(transcript ?: "") else transcript,text,output,steps,threads)
+    }
+    fun cancel() { if (available) nativeCancel() }
+    private external fun nativeSynthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String
+    private external fun nativeCancel()
+    // Used only by the repeatable device benchmark. Normal rendering stays stochastic.
+    fun setBenchmarkSeedForTesting(seed: Int) { require(available);nativeBenchmarkSeed(seed) }
+    private external fun nativeBenchmarkSeed(seed: Int)
+}
+
+object NativeGpuEngine {
+    val available: Boolean = try { System.loadLibrary("voxstudio_gpu");true } catch (_: UnsatisfiedLinkError) { false }
+    @Suppress("unused")
+    fun onProgress(stage: String, current: Int, total: Int, audioSeconds: Double) {
+        GpuWorkerService.progress?.invoke(stage,current,total,audioSeconds)
     }
     fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
         require(available) { "This device needs the compatibility APK; its CPU lacks FP16/dot-product instructions." }

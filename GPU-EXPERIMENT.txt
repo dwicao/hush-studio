@@ -25,3 +25,30 @@ Next investigation: query individual device extensions/features and determine
 whether a Vulkan 1.1-compatible backend port is feasible; alternatively assess
 an Android-supported OpenCL/Qualcomm path. Either needs backend/operator coverage
 validation. A Snapdragon label alone does not guarantee this Vulkan runtime works.
+
+23 October automatic backend implementation (0.1.12)
+- Separate libvoxstudio_cpu.so and libvoxstudio_gpu.so; GPU driver dependency
+  never prevents CPU engine loading. OpenCL vendor library is not packaged.
+- GPU native work runs in private :gpu service process with Messenger IPC.
+  Progress is relayed; cancellation forwarded. Process death, load failure,
+  returned errors and a two-minute timeout cause CPU retry. Failure is remembered
+  per firmware fingerprint/app version. CPU remains available without GPU.
+- OpenCL graph scheduler dispatches unsupported operations to CPU; persistent
+  State/KV/Output allocations use explicit CPU-owned staging for this experiment.
+  Shared weights retained. GPU/CPU state transfer cost is not yet optimized.
+- Full GPU narration is NOT qualified on Moto G71. Tests exposed device-metadata
+  and persistent-view scheduler failures. Force-GPU test failed, not a benchmark.
+  No claim of full GPU support on any phone without passing those tests.
+- Actual GPU process crash was contained and automatic CPU retry produced valid
+  PCM (benchmark test passed in 51.617s including failed GPU attempt).
+  Next automatic generation skipped GPU and passed in 6.543s. These use different
+  scripts, so elapsed times are not a throughput comparison.
+- Build, lint, 13 host tests passed. Final APK signature and 16KB ZIP alignment
+  passed. Default app is automatic but this device is remembered as CPU fallback.
+
+Rebuilding both engines: first assembleDebug with -PmobileFast=true and GPU flags
+OFF. Extract lib/arm64-v8a/libvoxstudio_cpu.so from that APK into
+../../work/cpu-jni/arm64-v8a/libvoxstudio_cpu.so relative to project. Then build
+with -PmobileFast=true -PmobileOpenCl=true. OpenCL headers and link-only vendor
+library preparation are documented in OPENCL-EXPERIMENT.txt. Use matching CPU
+and GPU architecture flags; this artifact requires FP16/dot-product CPU support.

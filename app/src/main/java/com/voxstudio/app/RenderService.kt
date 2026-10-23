@@ -128,7 +128,7 @@ object StudioJobs {
         sectionLabel = status.removeSuffix("…")
         val cache=NarrationCache(File(store.context.cacheDir,"narration-cache"))
         val reference=if(voice) File(dir,"reference.wav") else null
-        val key=cache.key(text,transcript,reference,"${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:${BuildConfig.MOBILE_FAST}:$steps:${store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)}")
+        val key=cache.key(text,transcript,reference,"${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${BuildConfig.MOBILE_FAST}:$steps:${store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)}")
         if(reuse && cache.restore(key,temp)) {
             check(temp.renameTo(File(dir,"section-$index.wav")))
             File(dir,"timing-$index.txt").writeText("cache_hit=true\ngeneration_ms=${SystemClock.elapsedRealtime()-start}\n")
