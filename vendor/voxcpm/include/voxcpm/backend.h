@@ -26,6 +26,7 @@ enum class BackendType {
     CUDA,
     Metal,
     Vulkan,
+    OpenCL,
     Auto,  // Auto-detect best available
 };
 

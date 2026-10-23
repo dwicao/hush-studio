@@ -122,6 +122,7 @@ const char* backend_type_name(BackendType type) {
     switch (type) {
         case BackendType::CPU:
             return "cpu";
+        case BackendType::OpenCL: return "opencl";
         case BackendType::Vulkan:
             return "vulkan";
         case BackendType::Auto:
@@ -289,6 +290,7 @@ BackendType parse_backend_type(const std::string& value) {
     if (value == "cuda") {
         return BackendType::CUDA;
     }
+    if (value == "opencl") return BackendType::OpenCL;
     if (value == "vulkan") {
         return BackendType::Vulkan;
     }

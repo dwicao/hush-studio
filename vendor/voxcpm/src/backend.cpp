@@ -143,6 +143,30 @@ BackendInitResult init_vulkan_backend() {
     return result;
 }
 
+BackendInitResult init_opencl_backend() {
+    BackendInitResult result;
+
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (to_lower_copy(ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev))).find("opencl")==std::string::npos) {
+            continue;
+        }
+
+        result.backend = ggml_backend_dev_init(dev, nullptr);
+        if (!result.backend) {
+            continue;
+        }
+
+        result.type = BackendType::OpenCL;
+        result.is_gpu = true;
+        result.name = ggml_backend_dev_name(dev);
+        result.description = ggml_backend_dev_description(dev);
+        return result;
+    }
+
+    return result;
+}
+
 BackendInitResult init_cuda_backend() {
     BackendInitResult result;
 
@@ -182,6 +206,11 @@ BackendInitResult init_requested_backend(BackendType type, int n_threads) {
             return result;
         }
 
+        case BackendType::OpenCL: {
+            auto result=init_opencl_backend();
+            if(!result.backend) throw Error(ErrorCode::BackendError,"OpenCL initialization failed");
+            return result;
+        }
         case BackendType::Vulkan: {
             BackendInitResult result = init_vulkan_backend();
             if (!result.backend) {
@@ -578,6 +607,15 @@ ggml_status VoxCPMBackend::compute(ggml_cgraph* graph) {
     const auto it_mode = graph_scheduler_modes_.find(graph);
     if (it_mode != graph_scheduler_modes_.end() && it_mode->second) {
         return ggml_backend_sched_graph_compute(sched_, graph);
+    }
+    if(type_==BackendType::OpenCL) {
+        auto device=ggml_backend_get_device(backend_);
+        for(int i=0;i<ggml_graph_n_nodes(graph);++i) {
+            auto node=ggml_graph_node(graph,i);
+            if(node->op==GGML_OP_NONE || node->op==GGML_OP_VIEW || node->op==GGML_OP_RESHAPE || node->op==GGML_OP_PERMUTE || node->op==GGML_OP_TRANSPOSE) continue;
+            if(!ggml_backend_dev_supports_op(device,node))
+                throw Error(ErrorCode::BackendError,std::string("OpenCL does not support model operation: ")+ggml_op_name(node->op));
+        }
     }
     return ggml_backend_graph_compute(backend_, graph);
 }

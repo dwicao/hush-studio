@@ -1,4 +1,5 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+val mobileOpenCl = providers.gradleProperty("mobileOpenCl").orNull == "true"
 val mobileGpu = providers.gradleProperty("mobileGpu").orNull == "true"
 val mobileFast = providers.gradleProperty("mobileFast").orNull == "true"
 android {
@@ -13,7 +14,7 @@ android {
         versionName = "0.1.11"
         buildConfigField("boolean", "MOBILE_FAST", mobileFast.toString())
         ndk { abiFilters += "arm64-v8a" }
-        externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=${if (mobileFast) "ON" else "OFF"}" } }
+        externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=${if (mobileFast) "ON" else "OFF"}" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig = true }
@@ -21,7 +22,7 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildTypes { release { isMinifyEnabled = false } }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging { jniLibs { useLegacyPackaging = false; excludes += "**/libOpenCL.so" } }
     lint { abortOnError = true }
 }
 dependencies {

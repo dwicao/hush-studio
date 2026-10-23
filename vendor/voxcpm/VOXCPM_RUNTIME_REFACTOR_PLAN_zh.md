@@ -569,3 +569,5 @@ enum class BufferUsage {
 如果后续实现与这些文档发生偏离，必须优先更新计划和契约说明，再继续写代码。
 
 - 2026-10-22 Android experiment: app wrapper enables existing Vulkan backend without modifying tensor/operator or shared WeightStore contracts. Build passed; Moto G71 loader rejected because Vulkan 1.2 is required. CPU remains default; see ../../GPU-EXPERIMENT.txt. No GPU performance claim.
+
+- 2026-10-23 Android OpenCL investigation: explicit OpenCL backend initialization and operation preflight added, preserving shared WeightStore, buffer ownership and operator layouts. Adreno 619 kernel probe passed; full model reaches unsupported-operation boundary. CPU remains default; see ../../OPENCL-EXPERIMENT.txt.

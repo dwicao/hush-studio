@@ -57,7 +57,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
     cancel_requested.store(false);
     std::vector<std::string> args = {"voxstudio", "--model-path", utf8(env,model), "--text", utf8(env,text),
         "--output", utf8(env,output), "--backend",
-#ifdef VOX_MOBILE_GPU
+#if defined(VOX_MOBILE_OPENCL)
+        "opencl",
+#elif defined(VOX_MOBILE_GPU)
         "vulkan",
 #else
         "cpu",
