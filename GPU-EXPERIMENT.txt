@@ -6,7 +6,7 @@ CPU remains the default build. Use direct native instrumentation for benchmarks,
 not normal app generation (which can reuse previously cached CPU audio).
 
 Dependencies: Android NDK 28.2.13676358 bundled host glslc; Vulkan-Headers
-v1.4.321 extracted into ../../work/vulkan/Vulkan-Headers-1.4.321 relative to this
+v1.4.321 extracted into dev-deps/vulkan/Vulkan-Headers-1.4.321 relative to this
 project. Archive: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.321.tar.gz
 SHA256: 7c1874f9186d9e7d5245e279cdccaa77a66ed8f52871b428630aeb771dc7623c
 Current host configuration is macOS; shader compiler path uses darwin-x86_64.
@@ -48,7 +48,7 @@ validation. A Snapdragon label alone does not guarantee this Vulkan runtime work
 
 Rebuilding both engines: first assembleDebug with -PmobileFast=true and GPU flags
 OFF. Extract lib/arm64-v8a/libvoxstudio_cpu.so from that APK into
-../../work/cpu-jni/arm64-v8a/libvoxstudio_cpu.so relative to project. Then build
+dev-deps/cpu-jni/arm64-v8a/libvoxstudio_cpu.so relative to project. Then build
 with -PmobileFast=true -PmobileOpenCl=true. OpenCL headers and link-only vendor
 library preparation are documented in OPENCL-EXPERIMENT.txt. Use matching CPU
 and GPU architecture flags; this artifact requires FP16/dot-product CPU support.

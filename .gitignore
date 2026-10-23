@@ -8,3 +8,8 @@ local.properties
 
 .kotlin/
 .DS_Store
+
+# Local dependencies, model and retained verification artifacts
+dev-deps/
+models/
+artifacts/

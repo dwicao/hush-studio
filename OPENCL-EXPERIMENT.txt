@@ -5,8 +5,8 @@ executed a float GPU kernel; 1024/1024 results matched exactly. This proves GPU
 compute access from the device shell, not full VoxCPM acceleration.
 
 Experimental app build: -PmobileFast=true -PmobileOpenCl=true. Existing Vulkan
-flag must be off. OpenCL-Headers v2024.10.24 extracted in ../../work; link-only
-phone libOpenCL.so pulled into ../../work/libOpenCL.so. Do not package that
+flag must be off. OpenCL-Headers v2024.10.24 extracted in dev-deps; link-only
+phone libOpenCL.so pulled into dev-deps/libOpenCL.so. Do not package that
 vendor library. Manifest declares optional uses-native-library libOpenCL.so.
 Build script currently uses host /usr/bin/python3 for kernel embedding.
 
