@@ -44,8 +44,24 @@ android {
     packaging { jniLibs { useLegacyPackaging = false; excludes += "**/libOpenCL.so" } }
     lint { abortOnError = true }
 }
+// Built-in voices must be consented, licensed recordings before release. Placeholder clips
+// (scripts/make-placeholder-voices.sh) are for development and fail release builds.
+val checkBuiltInVoices by tasks.registering {
+    val catalog = file("src/main/assets/voices/catalog.json")
+    inputs.file(catalog)
+    doLast {
+        @Suppress("UNCHECKED_CAST")
+        val voices = (groovy.json.JsonSlurper().parse(catalog) as Map<String, Any>)["voices"] as List<Map<String, Any>>
+        val placeholders = voices.filter { it["placeholder"] == true }.map { it["id"] }
+        val missing = voices.filter { !file("src/main/assets/voices/${it["file"]}").isFile }.map { it["id"] }
+        if (placeholders.isNotEmpty() || missing.isNotEmpty())
+            throw GradleException("Built-in voices not ready for release. Placeholder: $placeholders. Missing clips: $missing.")
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkBuiltInVoices) }
 dependencies {
     implementation("com.alphacephei:vosk-android:0.3.75")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }

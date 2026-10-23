@@ -18,3 +18,7 @@ artifacts/
 keystore.properties
 *.jks
 *.keystore
+
+# Placeholder built-in voice clips are generated locally (scripts/make-placeholder-voices.sh)
+# and are not licensed for distribution. Licensed replacements should be committed explicitly.
+app/src/main/assets/voices/*.wav

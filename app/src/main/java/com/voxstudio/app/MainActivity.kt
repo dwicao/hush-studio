@@ -27,7 +27,8 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
     private var tab = "Create"
-    private var voiceEditor=true
+    private var voiceEditor=false
+    private var voiceFilter="All"
     private var voiceNotice=""
     private var cloneVoiceAction: (() -> Unit)?=null
     private var generateSpeechAction: (() -> Unit)?=null
@@ -89,7 +90,8 @@ class MainActivity : Activity() {
         if(tab=="Setup") tab="Settings"
         libraryQuery=savedInstanceState?.getString("libraryQuery") ?: ""
         listOf("Create","Voices","Library","Settings").forEach { key -> scrollPositions[key]=savedInstanceState?.getInt("scroll$key") ?: 0 }
-        voiceEditor = savedInstanceState?.getBoolean("voiceEditor") ?: store.voices.list().isEmpty()
+        voiceEditor = savedInstanceState?.getBoolean("voiceEditor") ?: false
+        voiceFilter = savedInstanceState?.getString("voiceFilter") ?: "All"
         exportProject = savedInstanceState?.getString("exportProject")?.let { File(store.projects,it) }
         window.statusBarColor = bg; window.navigationBarColor = bg
         draw()
@@ -99,7 +101,7 @@ class MainActivity : Activity() {
     // Free the warm model when the system needs memory or the UI is hidden; unsaved work is unaffected.
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if(level>=TRIM_MEMORY_RUNNING_LOW && !StudioJobs.busy) StudioJobs.scheduleModelRelease(0) }
     override fun onDestroy() { chunkStudio?.setOnDismissListener(null);chunkStudio?.dismiss();chunkStudio=null;stopPlayback(); io.shutdown(); super.onDestroy() }
-    override fun onSaveInstanceState(outState: Bundle) { pageScroll?.let { scrollPositions[drawnTab]=it.scrollY };scrollPositions.forEach { (key,value) -> outState.putInt("scroll$key",value) };outState.putString("libraryQuery",libraryQuery);outState.putString("tab",tab); outState.putBoolean("voiceEditor",voiceEditor); outState.putString("exportProject",exportProject?.name); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { pageScroll?.let { scrollPositions[drawnTab]=it.scrollY };scrollPositions.forEach { (key,value) -> outState.putInt("scroll$key",value) };outState.putString("libraryQuery",libraryQuery);outState.putString("tab",tab); outState.putBoolean("voiceEditor",voiceEditor);outState.putString("voiceFilter",voiceFilter); outState.putString("exportProject",exportProject?.name); super.onSaveInstanceState(outState) }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).roundToInt()
     private fun shape(color: Int, radius: Int = 18, border: Int? = null) = GradientDrawable().apply {
         setColor(color); cornerRadius = dp(radius).toFloat(); if (border != null) setStroke(dp(1),border)
@@ -179,7 +181,7 @@ class MainActivity : Activity() {
     // this screen has somewhere to go back to, so the system back gesture can leave the app otherwise.
     private val backCallback=if(Build.VERSION.SDK_INT>=33) android.window.OnBackInvokedCallback { handleBack() } else null
     private var backRegistered=false
-    private fun handlesBack()=recorder?.active==true || tab!="Create" || (tab=="Voices" && voiceEditor && store.voices.list().isNotEmpty())
+    private fun handlesBack()=recorder?.active==true || tab!="Create"
     private fun updateBackCallback() {
         if(Build.VERSION.SDK_INT<33) return
         val wanted=handlesBack()
@@ -190,7 +192,7 @@ class MainActivity : Activity() {
     }
     private fun handleBack() {
         if(recorder?.active==true) { toast("Finish your recording before leaving.");return }
-        if(tab=="Voices" && voiceEditor && store.voices.list().isNotEmpty()) { voiceEditor=false;draw() }
+        if(tab=="Voices" && voiceEditor) { voiceEditor=false;voiceNotice="";draw() }
         else if(tab!="Create") navigate("Create")
     }
     // Only reached below API 33; API 33+ back gestures go through backCallback above.
@@ -356,14 +358,15 @@ class MainActivity : Activity() {
                 ready.addView(button("Listen") { showProject(dir) },LinearLayout.LayoutParams(-2,-2));gap(content,14)
             }
         }
-        val selectedVoiceName=store.selectedVoice?.name ?: "Default voice"
+        val selectedVoice=store.selectedVoice
+        val selectedVoiceName=selectedVoice?.name ?: "Model voice"
         val voice=column(content,true)
         val voiceHeading=row(voice)
         voiceHeading.addView(label("VOICE",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
-        voiceHeading.addView(button("Manage") { voiceEditor=store.voices.list().isEmpty();navigate("Voices") },LinearLayout.LayoutParams(-2,-2))
+        voiceHeading.addView(button("Browse") { voiceEditor=false;navigate("Voices") },LinearLayout.LayoutParams(-2,-2))
         gap(voice,6)
         fullButton(voice,"$selectedVoiceName  ▾") { chooseSavedVoice() }
-        if(store.voices.list().isEmpty()) { gap(voice,8);voice.addView(label("Clone your voice in the Voices tab, or try the default voice.",12f,muted)) }
+        gap(voice,8);voice.addView(label(voiceDescription(selectedVoice),12f,muted))
         gap(content,18)
         val heading=row(content)
         heading.addView(label("YOUR SCRIPT",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
@@ -399,21 +402,25 @@ class MainActivity : Activity() {
         generateSpeechAction={
             if(!store.ready) navigate("Settings") else {
                 val text=script.text.toString();ScriptSections.split(text)
-                val voiceId=store.prefs.getString("selectedVoiceId",null)?.takeIf { it.isNotEmpty() }
+                val voiceId=store.selectedVoice?.id
                 stopPlayback()
                 val dir=ChunkProjects.create(this,text,title.text.toString(),voiceId,store.prefs.getInt("steps",6))
                 openStudio(dir,autoGenerate=true)
             }
         }
     }
+    private fun voiceDescription(voice: VoiceLibrary.Voice?): String {
+        if(voice==null) return "Built-in voices are not installed in this build."
+        return BuiltInVoices.entry(this,voice.id)?.label ?: "Your cloned voice"
+    }
     private fun chooseSavedVoice() {
-        val voices=store.voices.list()
-        val options=(listOf("Default voice · no sample needed")+voices.map { it.name }).toTypedArray()
-        val selected=store.prefs.getString("selectedVoiceId",null)
-        val current=voices.indexOfFirst { it.id==selected }+1
+        val mine=store.voices.list()
+        val builtIn=BuiltInVoices.catalog(this)
+        val ids=mine.map { it.id }+builtIn.map { it.voiceId }
+        val options=(mine.map { "${it.name} — your voice" }+builtIn.map { "${it.name} — ${it.label}" }).toTypedArray()
         AlertDialog.Builder(this).setTitle("Choose voice")
-            .setSingleChoiceItems(options,current) { dialog,index ->
-                store.prefs.edit().putString("selectedVoiceId",if(index==0) "" else voices[index-1].id).apply()
+            .setSingleChoiceItems(options,ids.indexOf(store.selectedVoice?.id)) { dialog,index ->
+                store.prefs.edit().putString("selectedVoiceId",ids[index]).apply()
                 dialog.dismiss(); draw()
             }.setNegativeButton("Cancel",null).show()
     }
@@ -453,7 +460,7 @@ class MainActivity : Activity() {
                         .setNegativeButton("Keep voice",null).setPositiveButton("Delete") { _,_ -> safely {
                             store.voices.delete(saved.id)
                             if(store.prefs.getString("selectedVoiceId",null)==saved.id) store.prefs.edit().remove("selectedVoiceId").apply()
-                            voiceEditor=store.voices.list().isEmpty();voiceNotice="";draw()
+                            voiceEditor=false;voiceNotice="";draw()
                         } }.show()
                 };true
             };show()
@@ -462,30 +469,72 @@ class MainActivity : Activity() {
     private fun voiceScreen() {
         val voices=store.voices.list()
         if(!voiceEditor) {
+            val selectedId=store.selectedVoice?.id
+            val builtIn=BuiltInVoices.catalog(this)
             val top=row(content)
-            top.addView(label("Your voices",27f,ink,true),LinearLayout.LayoutParams(0,-2,1f))
-            top.addView(button("+ New voice") { startNewVoice() },LinearLayout.LayoutParams(-2,-2))
-            gap(content,6);content.addView(label("${voices.size} saved on this phone · choose one to create speech",13f,muted));gap(content,18)
+            top.addView(label("Voices",27f,ink,true),LinearLayout.LayoutParams(0,-2,1f))
+            top.addView(button("+ Clone voice") { startNewVoice() },LinearLayout.LayoutParams(-2,-2))
+            gap(content,6);content.addView(label("${builtIn.size} built-in · ${voices.size} cloned · all run offline on this phone",13f,muted));gap(content,18)
             if(voiceNotice.isNotBlank()) { content.addView(label(voiceNotice,13f,orange));gap(content,14) }
+            content.addView(label("MY VOICES",10f,muted,true));gap(content,8)
+            if(voices.isEmpty()) {
+                val card=column(content,true)
+                card.addView(label("Clone your own voice",16f,ink,true));gap(card,6)
+                card.addView(label("Record or import 5–10 seconds of clear speech. It becomes a reusable voice; nothing leaves your phone.",13f,muted));gap(card,12)
+                fullButton(card,"Clone a voice",true) { startNewVoice() }
+                gap(content,18)
+            }
             voices.forEach { saved ->
-                val card=column(content,true);val title=row(card)
+                val selected=selectedId==saved.id
+                val card=column(content,true);if(selected) card.background=shape(panel,16,orange)
+                val title=row(card)
                 title.addView(label(saved.name,18f,ink,true).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END },LinearLayout.LayoutParams(0,-2,1f))
                 lateinit var more: Button
                 more=button("⋮") { voiceMenu(more,saved) }.apply { contentDescription="Options for ${saved.name}" }
                 title.addView(more,LinearLayout.LayoutParams(dp(48),dp(48)))
                 val seconds=runCatching { AudioPeaks.durationMs(saved.reference)/1000.0 }.getOrDefault(0.0)
-                val selected=store.prefs.getString("selectedVoiceId",null)==saved.id
-                card.addView(label("${"%.1f".format(seconds)} sec sample · ${if(selected) "Selected voice" else "Ready to use"}",12f,if(selected) orange else muted));gap(card,12)
-                val actions=row(card)
-                actions.addView(button("Listen") { play(saved.reference) },LinearLayout.LayoutParams(0,-2,1f))
-                actions.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
-                actions.addView(button("Use voice",true) { store.prefs.edit().putString("selectedVoiceId",saved.id).apply();navigate("Create") },LinearLayout.LayoutParams(0,-2,1f))
-                gap(content,14)
+                card.addView(label("Cloned · ${"%.1f".format(seconds)} sec sample${if(selected) " · Selected" else ""}",12f,if(selected) orange else muted));gap(card,12)
+                voiceActions(card,saved.id,saved.name,saved.reference,selected)
+                gap(content,12)
+            }
+            if(builtIn.isEmpty()) return
+            gap(content,10)
+            val heading=row(content)
+            heading.addView(label("BUILT-IN VOICES",10f,muted,true),LinearLayout.LayoutParams(0,-2,1f))
+            if(builtIn.any { it.placeholder }) heading.addView(label("Placeholder clips · not for release",10f,Palette.error,true))
+            gap(content,8)
+            val filters=row(content)
+            listOf("All","Female","Male").forEachIndexed { index,name ->
+                if(index>0) filters.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
+                filters.addView(button(name,voiceFilter==name) { voiceFilter=name;draw() }.apply {
+                    contentDescription="Show ${name.lowercase()} voices";isSelected=voiceFilter==name
+                },LinearLayout.LayoutParams(0,-2,1f))
+            }
+            gap(content,12)
+            // Compact rows: name and description, a play button, and Use; orange marks only the selection.
+            builtIn.filter { voiceFilter=="All" || it.gender.equals(voiceFilter,true) }.forEach { entry ->
+                val selected=selectedId==entry.voiceId
+                val card=row(content).apply {
+                    background=shape(panel,14,if(selected) orange else line);setPadding(dp(14),dp(10),dp(10),dp(10))
+                }
+                val words=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+                words.addView(label(entry.name,16f,ink,true))
+                words.addView(label(entry.label,12f,if(selected) orange else muted))
+                card.addView(words,LinearLayout.LayoutParams(0,-2,1f))
+                card.addView(ImageButton(this).apply {
+                    setImageResource(R.drawable.ic_play);imageTintList=android.content.res.ColorStateList.valueOf(ink)
+                    background=shape(Palette.raised,24);contentDescription="Listen to ${entry.name}"
+                    setOnClickListener { safely { play(store.findVoice(entry.voiceId)!!.reference,entry.name) } }
+                },LinearLayout.LayoutParams(dp(48),dp(48)).apply { setMargins(dp(8),0,dp(8),0) })
+                card.addView(button(if(selected) "Selected" else "Use",selected) {
+                    store.prefs.edit().putString("selectedVoiceId",entry.voiceId).apply();draw()
+                }.apply { contentDescription=if(selected) "${entry.name} is selected" else "Use ${entry.name}" },LinearLayout.LayoutParams(-2,-2))
+                gap(content,8)
             }
             return
         }
         pageTitle("Clone a voice","Add a sample, name it, then review the spoken words.")
-        if(voices.isNotEmpty()) { fullButton(content,"‹ Back to saved voices",enabled=!StudioJobs.busy) { hideKeyboard();voiceEditor=false;voiceNotice="";draw() };gap(content,14) }
+        fullButton(content,"‹ Back to voices",enabled=!StudioJobs.busy) { hideKeyboard();voiceEditor=false;voiceNotice="";draw() };gap(content,14)
         val sample=if(store.reference.isFile) runCatching { AudioFiles.read(store.reference,20) }.getOrNull() else null
         val card=column(content,true)
         card.addView(label("1  ·  ADD A SAMPLE",11f,orange,true));gap(card,8)
@@ -540,6 +589,14 @@ class MainActivity : Activity() {
                 StudioJobs.update("${saved.name} saved on this phone")
             }
         }
+    }
+    private fun voiceActions(card: LinearLayout,id: String,name: String,reference: File?,selected: Boolean) {
+        val actions=row(card)
+        actions.addView(button("Listen") { play(reference ?: store.findVoice(id)!!.reference,name) }.apply { contentDescription="Listen to $name" },LinearLayout.LayoutParams(0,-2,1f))
+        actions.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
+        actions.addView(button(if(selected) "Create with $name" else "Use voice",true) {
+            store.prefs.edit().putString("selectedVoiceId",id).apply();navigate("Create")
+        }.apply { contentDescription="Use $name for new speech" },LinearLayout.LayoutParams(0,-2,1f))
     }
     private fun narrationMenu(anchor: View,dir: File) {
         val meta=store.metadata(dir)
@@ -805,11 +862,11 @@ class MainActivity : Activity() {
             regenerate={ index -> safely { startJob("Preparing section…") { StudioJobs.regenerate(it,dir,index) } } },
             closed={ playerDialog=null }).also { it.show() }
     }
-    private fun play(file: File) {
+    private fun play(file: File,title: String?=null) {
         require(!StudioJobs.busy && recorder?.active != true) { "Wait for the current task or recording." }
         stopPlayback()
         val saved=store.voices.list().find { it.reference==file }
-        playerDialog=StudioPlayerDialog(this,saved?.name ?: "Voice sample","Reference audio",file,
+        playerDialog=StudioPlayerDialog(this,title ?: saved?.name ?: "Voice sample","Reference audio",file,
             closed={ playerDialog=null }).also { it.show();it.startPreview() }
     }
     private fun stopPlayback() { playerDialog?.dismiss();playerDialog=null }

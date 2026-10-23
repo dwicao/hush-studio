@@ -11,7 +11,10 @@ class StudioStore(val context: Context) {
     val prefs = context.getSharedPreferences("studio", Context.MODE_PRIVATE)
     val model get() = File(context.filesDir, "model/voxcpm-0.5b-q4_k.gguf")
     val voices get() = VoiceLibrary(File(context.filesDir,"voices"))
-    val selectedVoice get() = voices.find(prefs.getString("selectedVoiceId",null))
+    /** Built-in voices and cloned voices share one id space; built-in ids start with "builtin-". */
+    fun findVoice(id: String?): VoiceLibrary.Voice? = if(id?.startsWith(BuiltInVoices.PREFIX)==true) BuiltInVoices.voice(context,id) else voices.find(id)
+    /** The chosen voice, else the first built-in voice so every chunk of a project sounds the same. */
+    val selectedVoice get() = findVoice(prefs.getString("selectedVoiceId",null)?.takeIf { it.isNotEmpty() }) ?: BuiltInVoices.default(context)
     val reference get() = File(context.filesDir, "voice/reference.wav")
     val projects get() = File(context.filesDir, "projects").also { it.mkdirs() }
     val ready get() = model.isFile && model.length() == MODEL_BYTES && prefs.getBoolean("modelVerified", false)

@@ -95,7 +95,7 @@ object StudioJobs {
         require(store.ready) { "Install the model in Setup first." }
         val parts = ScriptSections.split(script)
         generation.startProject(parts.size)
-        val savedVoice=if(voiceId==null) null else store.voices.find(voiceId) ?: error("Choose an available saved voice.")
+        val savedVoice=if(voiceId==null) null else store.findVoice(voiceId) ?: error("Choose an available voice.")
         val useVoice=savedVoice!=null
         val transcript=savedVoice?.transcript ?: ""
         val dir = File(store.projects, UUID.randomUUID().toString()).also { it.mkdirs() }

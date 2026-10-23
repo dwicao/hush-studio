@@ -20,7 +20,7 @@ object ChunkProjects {
         val store=StudioStore(context)
         require(text.isNotBlank() && text.length<=6000) { "Add a script up to 6,000 characters." }
         val chunks=split(text)
-        val voice=if(voiceId.isNullOrBlank()) null else store.voices.find(voiceId) ?: error("Choose an available voice.")
+        val voice=if(voiceId.isNullOrBlank()) null else store.findVoice(voiceId) ?: error("Choose an available voice.")
         val dir=File(store.projects,UUID.randomUUID().toString()).also { check(it.mkdirs()) }
         try {
             voice?.reference?.copyTo(File(dir,"reference.wav"),true)
