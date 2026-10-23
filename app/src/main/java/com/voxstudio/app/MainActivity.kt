@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private var stopButton: Button? = null
     private var exportProject: File? = null
     private var playerDialog: StudioPlayerDialog? = null
+    private var sampleAdjustment: SampleAdjustmentDialog? = null
     private var recorder: VoiceRecorder? = null
     private var recordLabel: TextView? = null
     private val io = Executors.newSingleThreadExecutor()
@@ -91,7 +92,7 @@ class MainActivity : Activity() {
         draw()
     }
     override fun onResume() { super.onResume(); handler.post(tick) }
-    override fun onPause() { handler.removeCallbacks(tick); playerDialog?.pause(); recorder?.stop(); super.onPause() }
+    override fun onPause() { sampleAdjustment?.pausePreview();handler.removeCallbacks(tick); playerDialog?.pause(); recorder?.stop(); super.onPause() }
     override fun onDestroy() { stopPlayback(); io.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { pageScroll?.let { scrollPositions[drawnTab]=it.scrollY };scrollPositions.forEach { (key,value) -> outState.putInt("scroll$key",value) };outState.putString("libraryQuery",libraryQuery);outState.putString("tab",tab); outState.putBoolean("voiceEditor",voiceEditor); outState.putString("exportProject",exportProject?.name); super.onSaveInstanceState(outState) }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).roundToInt()
@@ -629,65 +630,26 @@ class MainActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type=mime; addCategory(Intent.CATEGORY_OPENABLE) },code)
     }
     private fun showVoiceSamplePicker(input: File, seconds: Double) {
-        val form=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(22),dp(10),dp(22),0) }
-        form.addView(label("File: %.2f seconds. Choose 3–20 seconds of clean speech. The split button lists consecutive clips; only the chosen clip is saved. A 3–5 second sample is faster on this phone. Enter only the selected clip's words.".format(java.util.Locale.US,seconds)))
-        form.addView(label("START TIME (SECONDS)",12f,muted)); gap(form,6)
-        val start=field(form,"Start time (seconds)","0")
-        gap(form,10); form.addView(label("CLIP LENGTH (SECONDS)",12f,muted)); gap(form,6)
-        val duration=field(form,"Clip length (seconds)","%.3f".format(java.util.Locale.US,floor(minOf(5.0,seconds)*1000)/1000))
-        for(v in listOf(start,duration)) v.inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        gap(form,10); form.addView(label("EXACT CLIP TRANSCRIPT",12f,muted)); gap(form,6)
-        val transcript=field(form,"Exact words spoken in this clip…","",3)
-        transcript.filters=arrayOf(InputFilter.LengthFilter(600))
-        for(v in listOf(start,duration,transcript)) v.isEnabled=true
-        gap(form,10)
-        val extract=CheckBox(this).apply {
-            text="Extract transcript offline when blank"; setTextColor(ink); isChecked=true
-        }
-        form.addView(extract)
-        val scroll=ScrollView(this).apply { addView(form) }
-        val dialog=AlertDialog.Builder(this).setTitle("Choose voice sample").setView(scroll)
-            .setNegativeButton("Cancel",null).setNeutralButton("Split into 20s clips",null)
-            .setPositiveButton("Use this clip",null).create()
-        dialog.setOnDismissListener { input.delete() }
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                val starts=(0 until ceil(seconds/20).toInt()).map { it*20.0 }.filter { seconds-it>=3.0 }
-                val names=starts.map { at -> "%.1f–%.1f seconds".format(java.util.Locale.US,at,minOf(at+20,seconds)) }.toTypedArray()
-                AlertDialog.Builder(this).setTitle("Select a 20-second clip")
-                    .setItems(names) { _,which ->
-                        val at=starts[which]
-                        start.setText("%.1f".format(java.util.Locale.US,at))
-                        duration.setText("%.3f".format(java.util.Locale.US,floor(minOf(20.0,seconds-at)*1000)/1000))
-                        transcript.setText("")
-                    }.setNegativeButton("Cancel",null).show()
-            }
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { safely {
-                val at=start.text.toString().toDoubleOrNull() ?: error("Enter a valid start time in seconds.")
-                val length=duration.text.toString().toDoubleOrNull() ?: error("Enter a valid clip length in seconds.")
-                require(at.isFinite() && length.isFinite() && at>=0 && length in 3.0..20.0 && at+length<=seconds+0.00001) {
-                    "Choose 3–20 seconds within the file."
-                }
-                // Own a separate copy while the dialog's temporary source is cleaned up.
-                val chosen=File.createTempFile("voice-chosen-", ".wav",cacheDir)
+        val dialog=SampleAdjustmentDialog(this,input,seconds,
+            store.prefs.getFloat("sampleStart",0f).toDouble(),
+            store.prefs.getFloat("sampleLength",5f).toDouble()) { at,length -> safely {
+                val chosen=File.createTempFile("voice-chosen-",".bin",cacheDir)
                 input.copyTo(chosen,true)
-                val words=transcript.text.toString().trim()
-                val autoExtract=extract.isChecked && words.isBlank()
-                try { startJob("Saving selected voice clip…",true) { context ->
+                try { startJob("Updating voice sample…",true) { context ->
                     val target=File(context.filesDir,"voice/reference.new.wav")
                     try {
                         target.parentFile!!.mkdirs()
                         AudioImport.convert(chosen,target,{ StudioJobs.checkStop() },startSeconds=at,clipSeconds=length)
                         StudioJobs.checkStop()
                         check(target.renameTo(StudioStore(context).reference)) { "Could not save voice sample." }
-                        StudioStore(context).prefs.edit().putString("transcript",words).putBoolean("useVoice",true).apply()
-                        if(autoExtract) extractSavedTranscript(context)
-                        else StudioJobs.update(if(words.isBlank()) "Voice clip saved · extract its transcript in Voices before cloning" else "Voice clip saved · ready to clone")
-                    } finally { chosen.delete(); target.delete() }
-                } } catch(e: Exception) { chosen.delete(); throw e }
-                dialog.dismiss()
+                        StudioStore(context).prefs.edit().putString("transcript","").putBoolean("useVoice",true)
+                            .putFloat("sampleStart",at.toFloat()).putFloat("sampleLength",length.toFloat()).apply()
+                        extractSavedTranscript(context)
+                    } finally { chosen.delete();target.delete() }
+                } } catch(e: Exception) { chosen.delete();throw e }
             } }
-        }
+        sampleAdjustment=dialog
+        dialog.setOnDismissListener { sampleAdjustment=null;input.delete() }
         dialog.show()
     }
     private fun export(dir: File) {
@@ -712,6 +674,8 @@ class MainActivity : Activity() {
                     val candidate=File.createTempFile("voice-scan-",".wav",context.cacheDir)
                     val selected=File.createTempFile("voice-auto-",".wav",context.cacheDir)
                     var bestScore=Double.NEGATIVE_INFINITY
+                    var selectedStart=0.0
+                    var selectedLength=5.0
                     try {
                         var offset=0.0
                         while(offset<minOf(seconds,60.0) && seconds-offset>=3) {
@@ -722,6 +686,7 @@ class MainActivity : Activity() {
                             if(choice!=null && choice.score>bestScore) {
                                 AudioFiles.reference(candidate,selected,choice.start,choice.duration)
                                 bestScore=choice.score
+                                selectedStart=offset+choice.start;selectedLength=choice.duration
                             }
                             if(bestScore>=.7) break
                             offset+=20.0
@@ -731,7 +696,7 @@ class MainActivity : Activity() {
                         val store=StudioStore(context)
                         selected.copyTo(File(store.reference.parentFile!!.also { it.mkdirs() },"reference.new.wav"),true)
                         check(File(store.reference.parentFile,"reference.new.wav").renameTo(store.reference))
-                        store.prefs.edit().putString("transcript","").putBoolean("useVoice",true).apply()
+                        store.prefs.edit().putString("transcript","").putBoolean("useVoice",true).putFloat("sampleStart",selectedStart.toFloat()).putFloat("sampleLength",selectedLength.toFloat()).apply()
                         input.copyTo(File(context.cacheDir,"last-voice-source.bin"),true)
                         extractSavedTranscript(context)
                         StudioJobs.update("Sample selected and words extracted · listen and review before cloning")

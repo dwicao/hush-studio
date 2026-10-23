@@ -10,8 +10,8 @@ android {
         applicationId = "com.voxstudio.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.1.13"
+        versionCode = 15
+        versionName = "0.1.14"
         buildConfigField("boolean", "MOBILE_FAST", mobileFast.toString())
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=${if (mobileFast) "ON" else "OFF"}" } }

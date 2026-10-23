@@ -1,3 +1,24 @@
+VOX STUDIO 0.1.14 — sample adjustment UI
+
+Captured actual old adjustment screenshot, redesigned and installed new dialog.
+Dark styling matches app; visible start/end range, start timeline at 0.1s steps,
+5/10/20-second presets (5s recommended), +/-1s nudges, bounded sample preview,
+one primary Use this sample button. Numeric/transcript/split form removed.
+Transcript re-extraction is automatic after acceptance. Auto/import and manual
+selection now store range so subsequent adjustment can reopen it (older drafts
+without range metadata default to zero). Short files clamp valid duration.
+Preview releases on close, background and focus loss; claims audio focus.
+
+Build, lint, 15 host tests passed. Live Moto G71 checks: 10s preset +1s produced
+0:01–0:11; selecting 5s produced 0:01–0:06. Preview played and returned to idle;
+final build preview Stop state observed and background/return checked. Cancel
+and final install preserved draft preference contents. No user reference was
+replaced for UI testing. Final adjustment dialog left open, keyboard closed.
+Screenshots: VoxStudio-adjustment.png and VoxStudio-adjustment-before.png.
+APK signature/16KB ZIP alignment verified. GPU qualification limitation remains.
+
+--- Earlier checks ---
+
 VOX STUDIO 0.1.13 — automatic voice-sample preparation
 
 Import audio now selects a short sample and extracts its words automatically.
