@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private var stopButton: Button? = null
     private var exportProject: File? = null
     private var playerDialog: StudioPlayerDialog? = null
+    private var chunkStudio: ChunkStudioDialog?=null
     private var sampleAdjustment: SampleAdjustmentDialog? = null
     private var recorder: VoiceRecorder? = null
     private var recordLabel: TextView? = null
@@ -91,9 +92,9 @@ class MainActivity : Activity() {
         window.statusBarColor = bg; window.navigationBarColor = bg
         draw()
     }
-    override fun onResume() { super.onResume(); handler.post(tick) }
-    override fun onPause() { sampleAdjustment?.pausePreview();handler.removeCallbacks(tick); playerDialog?.pause(); recorder?.stop(); super.onPause() }
-    override fun onDestroy() { stopPlayback(); io.shutdown(); super.onDestroy() }
+    override fun onResume() { super.onResume();chunkStudio?.resume();handler.post(tick) }
+    override fun onPause() { chunkStudio?.pause();sampleAdjustment?.pausePreview();handler.removeCallbacks(tick); playerDialog?.pause(); recorder?.stop(); super.onPause() }
+    override fun onDestroy() { chunkStudio?.setOnDismissListener(null);chunkStudio?.dismiss();chunkStudio=null;stopPlayback(); io.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) { pageScroll?.let { scrollPositions[drawnTab]=it.scrollY };scrollPositions.forEach { (key,value) -> outState.putInt("scroll$key",value) };outState.putString("libraryQuery",libraryQuery);outState.putString("tab",tab); outState.putBoolean("voiceEditor",voiceEditor); outState.putString("exportProject",exportProject?.name); super.onSaveInstanceState(outState) }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).roundToInt()
     private fun shape(color: Int, radius: Int = 18, border: Int? = null) = GradientDrawable().apply {
@@ -181,7 +182,7 @@ class MainActivity : Activity() {
         val ready=footerReady?.invoke() ?: true
         footerButton?.let {
             it.isEnabled=!blocked && ready;it.alpha=if(it.isEnabled) 1f else .4f
-            val title=if(StudioJobs.busy) "Working…" else if(cloneVoiceAction!=null) "Clone voice" else if(!store.ready) "Set up to generate" else "Generate narration"
+            val title=if(StudioJobs.busy) "Working…" else if(cloneVoiceAction!=null) "Clone voice" else if(!store.ready) "Set up to generate" else "Open chunk studio"
             if(it.text.toString()!=title) it.text=title
         }
         val hint=if(StudioJobs.busy) "You can browse while this task runs." else footerMessage?.invoke() ?: ""
@@ -299,7 +300,11 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel",null).show()
     }
     private fun createScreen() {
-        pageTitle("Create speech","Choose a voice and add the words you want to hear.")
+        pageTitle("Create speech","Add your script, then generate and refine individual chunks.")
+        store.prefs.getString("studioProjectId",null)?.let { id ->
+            val dir=File(store.projects,id)
+            if(File(dir,"project.json").isFile) { fullButton(content,"Continue · ${store.metadata(dir).optString("title")}") { openStudio(dir) };gap(content,14) }
+        }
         if(!store.ready) {
             val setup=column(content,true);setup.addView(label("Make your phone ready",16f,ink,true));gap(setup,6)
             setup.addView(label("Download the speech model once, then create entirely offline.",13f,muted));gap(setup,10)
@@ -357,7 +362,8 @@ class MainActivity : Activity() {
                 val text=script.text.toString();ScriptSections.split(text)
                 val voiceId=store.prefs.getString("selectedVoiceId",null)?.takeIf { it.isNotEmpty() }
                 stopPlayback()
-                startJob("Preparing narration…") { StudioJobs.generate(it,text,title.text.toString(),voiceId,store.prefs.getInt("steps",6)) }
+                val dir=ChunkProjects.create(this,text,title.text.toString(),voiceId,store.prefs.getInt("steps",6))
+                openStudio(dir)
             }
         }
     }
@@ -499,7 +505,7 @@ class MainActivity : Activity() {
     private fun narrationMenu(anchor: View,dir: File) {
         val meta=store.metadata(dir)
         PopupMenu(this,anchor).apply {
-            menu.add("Rename");menu.add("Export WAV");menu.add("Delete narration")
+            menu.add("Rename");if(File(dir,"full.wav").isFile) menu.add("Export WAV");menu.add("Delete narration")
             setOnMenuItemClickListener { item ->
                 when(item.title.toString()) {
                     "Rename" -> editName("Rename narration",meta.getString("title"),80) { store.renameProject(dir,it);draw() }
@@ -541,14 +547,16 @@ class MainActivity : Activity() {
                 more=button("⋮") { narrationMenu(more,dir) }.apply { contentDescription="Options for narration ${meta.getString("title")}" }
                 header.addView(more,LinearLayout.LayoutParams(dp(42),dp(44)))
                 val duration=runCatching { AudioPeaks.durationMs(File(dir,"full.wav")) }.getOrDefault(0)
-                val clock="%d:%02d".format(duration/60000,duration/1000%60)
+                val totalChunks=meta.getJSONArray("sections").length()
+                val readyChunks=(0 until totalChunks).count { File(dir,"section-$it.wav").isFile }
+                val clock=if(File(dir,"full.wav").isFile) "%d:%02d".format(duration/60000,duration/1000%60) else "$readyChunks / $totalChunks chunks ready"
                 val voice=meta.optString("voiceName",if(meta.optBoolean("voice")) "Cloned voice" else "Default voice")
                 card.addView(label("$clock · $voice",12f,orange));gap(card,4)
                 val date=java.text.SimpleDateFormat("d MMM · HH:mm",java.util.Locale.getDefault()).format(java.util.Date(meta.optLong("created",dir.lastModified())))
                 val count=meta.getJSONArray("sections").length()
                 card.addView(label("$date · $count ${if(count==1) "section" else "sections"}",11f,muted));gap(card,10)
                 card.addView(label(meta.getJSONArray("sections").optString(0),13f,muted).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END })
-                gap(card,12);fullButton(card,"▶ Listen",true) { showProject(dir) };gap(results,14)
+                gap(card,12);fullButton(card,"Open studio",true) { openStudio(dir) };gap(results,14)
             }
         }
         search.addTextChangedListener(object: TextWatcher {
@@ -654,6 +662,7 @@ class MainActivity : Activity() {
     }
     private fun export(dir: File) {
         require(!StudioJobs.busy) { "Wait for the current task before exporting." }
+        require(File(dir,"full.wav").isFile) { "Generate all chunks before exporting." }
         exportProject=dir
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE); type="audio/wav"
@@ -729,6 +738,15 @@ class MainActivity : Activity() {
             val buffer=ByteArray(256*1024); var total=0L
             while(true) { StudioJobs.checkStop(); val n=input.read(buffer); if(n<0) break; total+=n; require(total<=limit) { "Selected file is too large." }; dest.write(buffer,0,n) }
         } }
+    }
+    private fun openStudio(dir: File) {
+        stopPlayback();hideKeyboard();chunkStudio?.dismiss()
+        val meta=store.metadata(dir)
+        if(!meta.optBoolean("studio")) { meta.put("studio",true);store.saveMetadata(dir,meta) }
+        store.prefs.edit().putString("studioProjectId",dir.name).apply()
+        chunkStudio=ChunkStudioDialog(this,dir,{ title,task -> startJob(title,task=task) },{ safely { export(dir) } }).also { dialog ->
+            dialog.setOnDismissListener { chunkStudio=null;if(!isFinishing && !isDestroyed)draw() };dialog.show()
+        }
     }
     private fun showProject(dir: File) {
         require(!StudioJobs.busy && recorder?.active!=true) { "Wait for the current task or recording." }

@@ -122,6 +122,21 @@ object StudioJobs {
         rebuild(dir,parts.length()); lastProject = dir.name
         update("Section ${index+1} regenerated · export updated")
     }
+    fun generateChunks(context: Context,dir: File,indices: List<Int>,fresh: Boolean=false) {
+        val store=StudioStore(context);require(store.ready) { "Set up the speech model first." }
+        val meta=store.metadata(dir);val parts=meta.getJSONArray("sections")
+        require(indices.isNotEmpty() && indices.all { it in 0 until parts.length() })
+        generation.startProject(indices.size)
+        indices.forEachIndexed { position,index ->
+            checkStop();generation.startSection(position+1);update("Generating chunk ${index+1} of ${parts.length()}…")
+            val audio=File(dir,"section-$index.wav")
+            if(fresh && audio.exists()) audio.copyTo(File(dir,"section-$index.previous-${System.currentTimeMillis()}.wav"))
+            render(store,dir,index,parts.getString(index),meta.optString("transcript"),meta.getBoolean("voice"),meta.getInt("steps"),!fresh)
+            generation.sectionDone();checkStop()
+        }
+        if((0 until parts.length()).all { File(dir,"section-$it.wav").isFile }) rebuild(dir,parts.length())
+        lastProject=dir.name;update("Selected chunks are ready")
+    }
     private fun render(store: StudioStore, dir: File, index: Int, text: String, transcript: String, voice: Boolean, steps: Int, reuse: Boolean = true) {
         val temp = File(dir,"section-$index.part.wav")
         val start = SystemClock.elapsedRealtime()

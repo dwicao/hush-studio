@@ -1,10 +1,10 @@
-VOX STUDIO — Android prototype, version 0.1.14
+VOX STUDIO — Android prototype, version 0.1.15
 
 Offline English narration and reference-conditioned voice cloning using
 OpenBMB VoxCPM-0.5B and the community VoxCPM.cpp runtime.
 
 INSTALL / FIRST USE
-1. Install VoxStudio-0.1.14-auto-arm64-debug.apk on phones supporting ARM dot-product
+1. Install VoxStudio-0.1.15-auto-arm64-debug.apk on phones supporting ARM dot-product
    and FP16 instructions (verified on Moto G71). Use the compat APK for older
    ARM64 phones. The fast build checks CPU support before loading inference.
    Android may ask you to allow installation from your chosen file manager.
@@ -204,7 +204,7 @@ cache keyed by text, transcript, reference contents, model/build and settings.
 Explicit section Regenerate always synthesizes a fresh take. New text still
 uses the existing CPU inference engine; no GPU speedup is claimed.
 
-0.1.14 includes automatic GPU attempt and protected CPU fallback. The Moto G71
+0.1.15 includes automatic GPU attempt and protected CPU fallback. The Moto G71
 currently fails full GPU qualification and runs CPU after its first failed
 attempt. See GPU-EXPERIMENT.txt for exact limits and two-engine build steps.
 
@@ -219,3 +219,15 @@ Sample adjustment now uses a timeline, 5/10/20-second presets, one-second
 nudges and bounded original-source preview. Use this sample converts the range
 and re-extracts words automatically. Cancel preserves the saved reference.
 Preview stops on background/focus loss or dialog close.
+
+CHUNK STUDIO
+Create: paste a script, choose voice/quality and Open chunk studio. Blank lines
+create paragraph boundaries; long paragraphs are split at 220 characters for
+the model. Tap a paragraph, then Generate chunk or Regenerate. Generate all
+fills missing chunks. Edit text invalidates only that chunk; previous audio
+is archived locally. Regeneration keeps other chunk audio unchanged. Partial
+projects persist and appear in Library. Export WAV is enabled when every chunk
+has audio. The fixed bottom player seeks, changes speed, navigates chunks and
+continues through consecutive generated chunks. Playback pauses on background.
+Library opens both new and older narrations in Studio; opening an older project
+marks it editable without changing its audio or creation date.

@@ -15,7 +15,7 @@ class StudioStore(val context: Context) {
     val reference get() = File(context.filesDir, "voice/reference.wav")
     val projects get() = File(context.filesDir, "projects").also { it.mkdirs() }
     val ready get() = model.isFile && model.length() == MODEL_BYTES && prefs.getBoolean("modelVerified", false)
-    fun history(): List<File> = projects.listFiles()?.filter { File(it,"project.json").isFile && File(it,"full.wav").isFile }?.sortedByDescending { runCatching { metadata(it).optLong("created",it.lastModified()) }.getOrDefault(it.lastModified()) } ?: emptyList()
+    fun history(): List<File> = projects.listFiles()?.filter { File(it,"project.json").isFile && (File(it,"full.wav").isFile || runCatching { metadata(it).optBoolean("studio") }.getOrDefault(false)) }?.sortedByDescending { runCatching { metadata(it).optLong("created",it.lastModified()) }.getOrDefault(it.lastModified()) } ?: emptyList()
     fun metadata(dir: File) = JSONObject(File(dir,"project.json").readText())
     fun saveMetadata(dir: File, data: JSONObject) {
         val temp = File(dir,"project.json.tmp"); temp.writeText(data.toString(2)); check(temp.renameTo(File(dir,"project.json")))

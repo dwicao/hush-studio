@@ -1,3 +1,36 @@
+VOX STUDIO 0.1.15 — paragraph-oriented speech studio
+
+Implemented selectable paragraph chunks following the supplied ElevenLabs
+reference: white canvas, voice initials, blue selected text, Generate/Regenerate
+and Edit actions, ready/duration states, fixed bottom transport/seek/speed and
+Export header. Header/body adapt to phone size; this is the requested chunk
+workflow, not an implementation of every ElevenLabs product feature.
+
+New documents persist metadata and immutable voice snapshot before synthesis.
+Selected chunks can be generated out of order. Generate all fills missing audio.
+Regenerate bypasses cache and archives the previous take; editing invalidates
+only that chunk and full mix, retaining prior WAVs. Full export is rebuilt only
+when all chunks are ready. Interrupted/failed projects remain available.
+
+Checks: fast dual-engine build, lint and 15 host tests passed. Physical
+ChunkStudioTest passed in 29.797s: partial out-of-order generation, completed
+assembly, single-chunk regeneration with other audio byte-identical, editing
+with prior takes retained and reassembly. Temporary test project removed.
+A separate visible Studio preview project was created with real first-chunk
+audio (11s), remaining two chunks intentionally ungenerated; test passed in
+40.146s. Preview uses default voice/4 steps and is left on the phone for review.
+User draft script, voice reference and transcript were not modified for preview.
+
+Live final UI: selected chunk 2 showed Generate chunk and disabled Play; Edit
+dialog opened and Cancel preserved its words. Chunk 1 showed Regenerate and
+played audio through the bottom bar. Export was visibly disabled for incomplete
+audio. Final screenshot outputs/VoxStudio-chunk-studio.png. App left on chunk 1
+ready to play. APK signature and 16KB ZIP alignment passed. Test APK removed.
+
+No new GPU qualification: prior GPU/CPU fallback limitations remain.
+
+--- Earlier checks ---
+
 VOX STUDIO 0.1.14 — sample adjustment UI
 
 Captured actual old adjustment screenshot, redesigned and installed new dialog.
