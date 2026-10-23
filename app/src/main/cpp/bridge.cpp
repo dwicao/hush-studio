@@ -27,6 +27,7 @@ static void mobile_progress(const char* stage, int current, int total, double au
 }
 // Reuse upstream's full, bounded CLI pipeline without forking its inference logic.
 // Arguments are built here; user text is never parsed as flags or sent to a shell.
+#include "ggml-cpu.h"
 #define main voxcpm_cli_main
 #include "mobile_pipeline.cpp"
 #undef main
@@ -85,6 +86,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
     catch (...) { diagnostics << "Native synthesis failed."; }
     std::cerr.rdbuf(previous);
     progress_env = nullptr; progress_receiver = nullptr; progress_method = nullptr;
+    // A user stop happens between graph computations, so the loaded model stays valid.
+    // Any other failure drops it; the next request reloads from the verified file.
+    if (code != 0 && !cancel_requested.load()) voxcpm::mobile_release_session();
     // Logs contain private script/reference information. Never write them to logcat.
     if (code != 0) {
         const std::string log = diagnostics.str();
@@ -101,6 +105,15 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
         return env->NewStringUTF(message.c_str());
     }
     return env->NewStringUTF("");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_voxstudio_app_NativeEngine_nativeRelease(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> lock(synthesis_mutex);
+    voxcpm::mobile_release_session();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_voxstudio_app_NativeEngine_nativeLastRunReusedModel(JNIEnv*, jobject) {
+    return voxcpm::g_mobile_session_reused ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_voxstudio_app_NativeEngine_nativeCancel(JNIEnv*, jobject) {

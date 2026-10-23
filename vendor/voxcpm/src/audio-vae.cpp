@@ -118,6 +118,50 @@ static void depthwise_conv_custom(ggml_tensor* dst,
     const int64_t item_begin = ith * items_per_thread;
     const int64_t item_end = std::min<int64_t>(item_begin + items_per_thread, work_items);
 
+    // Fast path for the CPU layout used in practice: unit-stride F32 rows and at most 64 taps.
+    // Layout: x/dst are [T, C, B] with T contiguous; weight is [K, 1, C].
+    // Loop order is k-outer / t-inner, but each output still accumulates bias first and then
+    // taps in increasing k, skipping out-of-range taps, exactly as the scalar loop below does.
+    // Results are therefore identical; only the per-element type dispatch and branch are removed.
+    const bool fast_layout = x->nb[0] == sizeof(float) && dst->nb[0] == sizeof(float) &&
+                             kernel <= 64 && op->stride >= 1 && op->dilation >= 1;
+    if (fast_layout) {
+        float taps[64];
+        for (int64_t item = item_begin; item < item_end; ++item) {
+            const int64_t b = item / channels;
+            const int64_t c = item % channels;
+            const float bias_val = b_data ? load_f32_scalar(b_data + c * bias->nb[0], bias->type) : 0.0f;
+            const float* x_row = reinterpret_cast<const float*>(x_data + b * x->nb[2] + c * x->nb[1]);
+            const uint8_t* w_channel = w_data + c * weight->nb[2];
+            float* dst_row = reinterpret_cast<float*>(dst_data + b * dst->nb[2] + c * dst->nb[1]);
+            for (int64_t k = 0; k < kernel; ++k) {
+                taps[k] = load_f32_scalar(w_channel + k * weight->nb[0], weight->type);
+            }
+            for (int64_t t = 0; t < t_len; ++t) {
+                dst_row[t] = bias_val;
+            }
+            const int64_t stride = op->stride;
+            for (int64_t k = 0; k < kernel; ++k) {
+                // Valid t satisfy 0 <= t * stride + offset < t_len.
+                const int64_t offset = k * op->dilation - op->padding * 2;
+                const int64_t t_begin = offset >= 0 ? 0 : (-offset + stride - 1) / stride;
+                const int64_t t_end = std::min<int64_t>(t_len, t_len - offset <= 0 ? 0 : (t_len - offset + stride - 1) / stride);
+                const float w = taps[k];
+                if (stride == 1) {
+                    const float* src = x_row + offset;
+                    for (int64_t t = t_begin; t < t_end; ++t) {
+                        dst_row[t] += src[t] * w;
+                    }
+                } else {
+                    for (int64_t t = t_begin; t < t_end; ++t) {
+                        dst_row[t] += x_row[t * stride + offset] * w;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     for (int64_t item = item_begin; item < item_end; ++item) {
         const int64_t b = item / channels;
         const int64_t c = item % channels;
