@@ -30,7 +30,8 @@ class SpeechQualityDiagnosticTest {
             }
         }
         val reference=File(out,"reference-5s.wav")
-        AudioFiles.reference(store.selectedVoice?.reference ?: store.reference,reference,0.0,5.0)
+        val source=store.selectedVoice?.reference ?: store.reference
+        AudioFiles.reference(source,reference,0.0,minOf(5.0,AudioFiles.read(source,20).seconds))
         val words=SpeechTranscriber.transcribe(context,reference)
         val text="So, I built a PC and attached it to the back of my phone."
         for((name,steps,cloned) in listOf(Triple("short-reference-4",4,true),Triple("short-reference-10",10,true),Triple("default-voice-10",10,false))) {

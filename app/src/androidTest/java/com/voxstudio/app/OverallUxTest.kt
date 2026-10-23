@@ -25,16 +25,16 @@ class OverallUxTest {
             inst.waitForIdleSync()
         }
         tab("Voices")
-        inst.runOnMainSync { assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() in listOf("Your voices","Clone a voice") }) }
+        inst.runOnMainSync { assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString()=="Clone a Voice" }) }
         tab("Library")
         inst.runOnMainSync {
-            val search=views(activity.window.decorView).filterIsInstance<EditText>().first { it.hint.toString()=="Search narrations or voices" }
+            val search=views(activity.window.decorView).filterIsInstance<EditText>().first { it.contentDescription=="Search narrations or voices" }
             search.setText("no_results_ux_check_8172")
-            assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString()=="No matching narrations" })
+            assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString().startsWith("No narrations match") })
             search.setText("")
         }
         tab("Settings")
-        inst.runOnMainSync { assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString()=="Private by design" }) }
+        inst.runOnMainSync { assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString()=="Open-Source Licenses" }) }
         tab("Create")
         inst.runOnMainSync { assertEquals(before,views(activity.window.decorView).filterIsInstance<EditText>().first { it.contentDescription=="Script" }.text.toString()) }
         assertEquals(before,store.prefs.getString("script",""))

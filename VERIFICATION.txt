@@ -1,3 +1,21 @@
+VOX STUDIO 0.1.16 — built-in voices and redesign (23 October 2026)
+
+Built-in voices: 20 placeholder clips (macOS voices, 4-5 s, not for release).
+VoiceQualificationTest on Moto G71, 3 seeds x 2 sentences per voice, pass = ASR
+hears at least 6 of 8 key words: 120 of 120 takes passed, every voice 6/6.
+An earlier run reporting Ethan at 1/6 used stale 7-8 s clips: built-in clips
+were cached per versionCode, so replaced clips never reached the engine. Fixed
+(refreshed on every install) and rerun. ASR is a coarse intelligibility proxy,
+not a judgement of naturalness or likeness. Real licensed voices must be
+qualified the same way before release.
+
+Redesign: system-style UI in light and dark mode, checked on device in both
+with no crashes (artifacts/design). Fixed an Android 12 launch crash from
+setting bar appearance before setContentView.
+Device suite (dev package, excluding benchmark and qualification): OK, 20 of
+20 tests in 365.7 s, after updating two tests to the new UI text and the
+shorter built-in clips.
+
 VOX STUDIO 0.1.16 — speed, studio redesign, hardening (23 October 2026)
 
 Build: relocated paths validated. CPU build (-PmobileFast=true), lint and 18
