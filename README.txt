@@ -1,4 +1,4 @@
-VOX STUDIO — Android prototype, version 0.1.15
+VOX STUDIO — Android prototype, version 0.1.16
 
 Offline English narration and reference-conditioned voice cloning using
 OpenBMB VoxCPM-0.5B and the community VoxCPM.cpp runtime.
@@ -231,3 +231,34 @@ has audio. The fixed bottom player seeks, changes speed, navigates chunks and
 continues through consecutive generated chunks. Playback pauses on background.
 Library opens both new and older narrations in Studio; opening an older project
 marks it editable without changing its audio or creation date.
+
+0.1.16 — SPEED, STUDIO AND HARDENING
+Speed (Moto G71, CPU, 2 threads, Balanced/6 steps, fixed seed, cache bypassed,
+three fixed chunks of about 21 s audio; scripts/device-benchmark.sh):
+  cloned voice  107.3 s -> 92.5 s   default voice  85.6 s -> 84.9 s
+- The model stays loaded between chunks and for 90 s after a task, then is
+  freed (1.34 GB -> 142 MB measured). It is freed at once under memory pressure.
+- A cloned voice's reference is encoded once per job, not once per chunk.
+- Faster AudioVAE depthwise convolution; output is bit-identical (same WAV
+  hashes). AudioVAE stages use at most two threads, so the 4-thread setting
+  no longer doubles waveform decoding on big.LITTLE phones.
+- The LM decode loop (about 65% of time) is unchanged; default-voice speed is
+  limited by it. Two threads remain the default.
+GPU: never attempted automatically. No phone has passed end-to-end GPU
+qualification. Builds that ship the GPU engine show an "Experimental GPU"
+switch in Advanced settings; any GPU failure falls back to CPU and turns the
+switch off. CPU-only builds (the default) show no switch.
+Studio: dark theme throughout, actions on the selected paragraph, chunk states
+(Ready / Generating / Queued / No audio yet), milestone progress with Stop,
+"Generate N remaining chunks", and Export that offers to finish missing chunks.
+Create's "Generate speech" opens the studio and generates every chunk.
+Hardening: storage and free-memory checks before a job, damaged-model detection,
+bounded archived takes (3 per chunk), cleanup of partial files after process
+death, explanatory microphone-denial dialog, font-scale-safe buttons,
+target API 36 with OnBackInvokedCallback back handling.
+Testing without touching personal data: build with -PdevInstall=true to install
+com.voxstudio.app.dev beside the real app; scripts/provision-dev-fixtures.sh
+provisions synthetic fixtures. Do NOT run connectedAndroidTest against the real
+package: Gradle uninstalls the app afterwards, deleting voices and projects.
+Release signing: put storeFile/storePassword/keyAlias/keyPassword in an untracked
+keystore.properties; without it, assembleRelease produces an unsigned APK.

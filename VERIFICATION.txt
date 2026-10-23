@@ -1,3 +1,49 @@
+VOX STUDIO 0.1.16 — speed, studio redesign, hardening (23 October 2026)
+
+Build: relocated paths validated. CPU build (-PmobileFast=true), lint and 18
+host tests pass with a project-local Gradle home. Release builds unsigned
+without keys; APK 16 KB zip-aligned, all native libs LOAD-aligned to 0x4000.
+
+Device: Moto G71 5G, Android 12. All tests ran in com.voxstudio.app.dev
+(-PdevInstall=true). The user's com.voxstudio.app was not modified: its debug
+signing key is gone, so an in-place update would need an uninstall that deletes
+its data. Its private data was backed up to artifacts/device-backup/ (gitignored).
+
+Benchmark (PipelineBenchmarkTest via scripts/device-benchmark.sh): real chunk
+pipeline, three fixed chunks, seed 4242, 6 steps, cache bypassed, battery
+28.6-34.5 C (phone charging over USB; cooldown capped at 5 min).
+  run                       default wall   clone wall   peak RSS
+  baseline 0.1.15, 2 thr        85.6 s       107.3 s     1.69/1.75 GB
+  persistent session, 2 thr     88.3 s        96.0 s
+  + depthwise fast path, 2 thr  84.9 s        92.5 s     1.69/1.75 GB
+  + VAE capped at 2, 4 thr      82.4 s        90.6 s
+  session only, 4 thr          105.3 s       121.4 s   (VAE ~2x slower)
+Per-chunk stages (default, 2 thr): load 0.6 s cold / 0.04 s warm, prefill
+~1.5 s, decode loop ~19-21 s, waveform decode 7.5 s -> 6.3 s. Clone reference
+encode 4.8 s -> 0 on chunks after the first. Identical WAV SHA-256 with the
+depthwise fast path forced off, and across 2 vs 4 threads. Thermal drift
+between runs is a confound; default-voice gains are within it.
+Profile (simpleperf, default run): Q4_K/Q5_K dot products ~60%, f16 dot 6%,
+depthwise 3.3%, scalar q8_K activation quantization 3.1%.
+
+UI on device (artifacts/audit-before, artifacts/audit-after): Create ->
+Generate speech -> studio auto-generates both chunks with Generating/Queued
+states; playback continues across chunks; regenerate after the idle window was
+cold (load 0.6 s) and immediately after was warm (0.025 s); previous takes kept.
+Memory 1.34 GB PSS warm -> 142 MB after 100 s idle. Font scale 1.3 checked and
+a clipped button fixed. Force-stop mid-generation kept the finished chunk
+("1 of 4 chunks ready"); stale .part/.tmp files removed on next launch.
+Device suite (dev package, synthetic fixtures): 16 of 19 passed; the other 3
+(voice reference length) passed after a fixture fix. A final full rerun was
+interrupted because the phone disconnected from ADB.
+
+GPU: NOT qualified. No GPU build or GPU test in this update. GPU is off unless
+explicitly enabled in a GPU-capable build. No acceleration is claimed.
+
+Not verified: Android 13-16 behaviour (back callback, API 36 target) on a real
+device, long-reference cloning, sustained thermal/battery use, other phones,
+human listening quality, TalkBack walkthrough.
+
 VOX STUDIO 0.1.15 — paragraph-oriented speech studio
 
 Implemented selectable paragraph chunks following the supplied ElevenLabs
