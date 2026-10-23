@@ -262,3 +262,31 @@ provisions synthetic fixtures. Do NOT run connectedAndroidTest against the real
 package: Gradle uninstalls the app afterwards, deleting voices and projects.
 Release signing: put storeFile/storePassword/keyAlias/keyPassword in an untracked
 keystore.properties; without it, assembleRelease produces an unsigned APK.
+
+BUILT-IN VOICES (0.1.16)
+The app ships 20 built-in voices next to the user's cloned voices. Every voice,
+built-in or cloned, is a short reference clip plus its exact transcript for the
+one shared VoxCPM model; there are no per-voice models. 20 clips add about 3 MB.
+Catalog: app/src/main/assets/voices/catalog.json (id, name, gender, accent, style,
+transcript, file, placeholder, license). With no voice chosen, the first built-in
+voice is used, because the reference-free model voice changes speaker between
+chunks (measured 91-229 Hz median pitch across five seeds).
+
+CURRENT CLIPS ARE PLACEHOLDERS. scripts/make-placeholder-voices.sh generates them
+from macOS voices for development. They are gitignored, labelled "not for release"
+in the app, and assembleRelease fails (checkBuiltInVoices) until every entry has a
+real clip and "placeholder": false.
+
+Replacing a placeholder with a real voice:
+- Rights: written consent from the speaker for commercial voice cloning and
+  distribution in the app, or a licence that allows it. Record the licence in the
+  catalog entry and in THIRD-PARTY-NOTICES.txt.
+- Audio: one speaker, quiet room, no music or reverb, natural narration pace,
+  4-6 seconds (longer clips add encode and prefill time to every chunk),
+  WAV 16 kHz mono 16-bit, no long silence at either end.
+- Transcript: the exact words spoken, with punctuation.
+- Qualification: run VoiceQualificationTest (see below) and ship only voices that
+  pass. Clip quality decides reliability: one placeholder produced intelligible
+  speech in 1 of 5 seeds while another passed 4 of 5.
+  adb shell am instrument -w -e class com.voxstudio.app.VoiceQualificationTest \
+    -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
