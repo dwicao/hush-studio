@@ -1,10 +1,10 @@
-VOX STUDIO — Android prototype, version 0.1.12
+VOX STUDIO — Android prototype, version 0.1.13
 
 Offline English narration and reference-conditioned voice cloning using
 OpenBMB VoxCPM-0.5B and the community VoxCPM.cpp runtime.
 
 INSTALL / FIRST USE
-1. Install VoxStudio-0.1.12-auto-arm64-debug.apk on phones supporting ARM dot-product
+1. Install VoxStudio-0.1.13-auto-arm64-debug.apk on phones supporting ARM dot-product
    and FP16 instructions (verified on Moto G71). Use the compat APK for older
    ARM64 phones. The fast build checks CPU support before loading inference.
    Android may ask you to allow installation from your chosen file manager.
@@ -204,6 +204,13 @@ cache keyed by text, transcript, reference contents, model/build and settings.
 Explicit section Regenerate always synthesizes a fresh take. New text still
 uses the existing CPU inference engine; no GPU speedup is claimed.
 
-0.1.12 includes automatic GPU attempt and protected CPU fallback. The Moto G71
+0.1.13 includes automatic GPU attempt and protected CPU fallback. The Moto G71
 currently fails full GPU qualification and runs CPU after its first failed
 attempt. See GPU-EXPERIMENT.txt for exact limits and two-engine build steps.
+
+Automatic voice import: choose an audio file; the app examines up to the first
+minute in 20-second windows, ranks up to five-second samples by active energy,
+quiet boundaries and clipping, then extracts words offline. This is a heuristic,
+not speaker or music detection. Listen and review before saving. Adjust sample
+(optional) retains manual range selection. One source is retained in app cache
+(up to 100 MiB) for adjustment and can be removed by Android cache cleanup.

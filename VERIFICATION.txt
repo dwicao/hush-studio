@@ -1,3 +1,25 @@
+VOX STUDIO 0.1.13 — automatic voice-sample preparation
+
+Import audio now selects a short sample and extracts its words automatically.
+Energy-based ranking examines up to the first minute in 20s decode windows,
+stopping early on a strong candidate. Windows up to 5s favor active audio,
+quieter boundaries and less clipping. This is not speaker/music recognition.
+User listens and reviews transcript before naming/saving the voice. Manual
+range controls remain behind Adjust sample (optional). One imported source is
+retained in app cache (100 MiB cap) for adjustment. Android can clear it.
+
+Build/lint/15 host tests passed, including leading-silence avoidance and silence
+rejection. Live WAV import on Moto G71: selected actual 123.73s ElevenLabs file;
+no clip dialog appeared; 5.0s reference saved and offline transcript populated.
+Screenshot: VoxStudio-auto-sample.png. The first live attempt exposed a decoded
+clip count rounding error; normalized clips now trim or pad up to 100ms at the
+codec boundary to preserve requested length. Retry passed. Larger mismatch is
+still rejected. APK signature and 16KB ZIP alignment passed. v0.1.13 installed.
+Voice name left blank; no cloned profile/narration saved on the user's behalf.
+GPU state compatibility limitation from 0.1.12 remains; no new GPU speed claim.
+
+--- Earlier checks ---
+
 VOX STUDIO 0.1.12 — automatic backend prototype
 See GPU-EXPERIMENT.txt for qualification results. Full GPU narration remains
 unqualified on Moto G71. CPU retry after actual GPU process death passed; a

@@ -443,7 +443,7 @@ class MainActivity : Activity() {
         val sample=if(store.reference.isFile) runCatching { AudioFiles.read(store.reference,20) }.getOrNull() else null
         val card=column(content,true)
         card.addView(label("1  ·  ADD A SAMPLE",11f,orange,true));gap(card,8)
-        card.addView(label(if(sample==null) "Record or import clean speech. Imported audio is converted automatically. Aim for 3–5 seconds." else "${"%.1f".format(sample.seconds)}-second sample ready",13f,muted));gap(card,8)
+        card.addView(label(if(sample==null) "Pick audio and we’ll choose a short sample and extract its words automatically." else "${"%.1f".format(sample.seconds)}-second sample ready",13f,muted));gap(card,8)
         val wave=WaveformView(this,orange,muted).apply { audio=sample?.samples }
         card.addView(wave,LinearLayout.LayoutParams(-1,dp(42)))
         recordLabel=label(if(sample==null) "Your sample stays on this phone" else "Listen before continuing",11f,muted).also { card.addView(it) }
@@ -453,6 +453,14 @@ class MainActivity : Activity() {
         actions.addView(Space(this),LinearLayout.LayoutParams(dp(8),1))
         actions.addView(button("Import audio") { chooseFile(41,"audio/*") },LinearLayout.LayoutParams(0,dp(48),1f))
         if(sample!=null) { gap(card,8);fullButton(card,"Listen to reference") { play(store.reference) } }
+        val importedSource=File(cacheDir,"last-voice-source.bin")
+        if(sample!=null && importedSource.isFile) {
+            gap(card,8);fullButton(card,"Adjust sample (optional)") { safely {
+                val copy=File.createTempFile("voice-adjust-",".bin",cacheDir)
+                importedSource.copyTo(copy,true)
+                try { showVoiceSamplePicker(copy,AudioImport.duration(copy)) } catch(e: Exception) { copy.delete();throw e }
+            } }
+        }
         gap(content,18)
         content.addView(label("2  ·  NAME YOUR VOICE",11f,orange,true));gap(content,8)
         val name=field(content,"e.g. My narrator",store.prefs.getString("voiceName","") ?: "",key="voiceName")
@@ -701,12 +709,33 @@ class MainActivity : Activity() {
                 try {
                     copyBounded(context,uri,input,100L*1024*1024)
                     val seconds=AudioImport.duration(input)
-                    StudioJobs.checkStop()
-                    runOnUiThread {
-                        if(isDestroyed || isFinishing) input.delete()
-                        else showVoiceSamplePicker(input,seconds)
-                    }
-                    StudioJobs.update("Choose a voice sample from the imported audio")
+                    val candidate=File.createTempFile("voice-scan-",".wav",context.cacheDir)
+                    val selected=File.createTempFile("voice-auto-",".wav",context.cacheDir)
+                    var bestScore=Double.NEGATIVE_INFINITY
+                    try {
+                        var offset=0.0
+                        while(offset<minOf(seconds,60.0) && seconds-offset>=3) {
+                            StudioJobs.update("Finding a clear voice sample…")
+                            AudioImport.convert(input,candidate,{ StudioJobs.checkStop() },startSeconds=offset,clipSeconds=minOf(20.0,seconds-offset))
+                            val wave=AudioFiles.read(candidate)
+                            val choice=runCatching { AutoVoiceSample.choose(wave) }.getOrNull()
+                            if(choice!=null && choice.score>bestScore) {
+                                AudioFiles.reference(candidate,selected,choice.start,choice.duration)
+                                bestScore=choice.score
+                            }
+                            if(bestScore>=.7) break
+                            offset+=20.0
+                        }
+                        require(selected.length()>44) { "Couldn’t find a clear sample in the first minute. Try a speech recording or record a sample." }
+                        StudioJobs.checkStop()
+                        val store=StudioStore(context)
+                        selected.copyTo(File(store.reference.parentFile!!.also { it.mkdirs() },"reference.new.wav"),true)
+                        check(File(store.reference.parentFile,"reference.new.wav").renameTo(store.reference))
+                        store.prefs.edit().putString("transcript","").putBoolean("useVoice",true).apply()
+                        input.copyTo(File(context.cacheDir,"last-voice-source.bin"),true)
+                        extractSavedTranscript(context)
+                        StudioJobs.update("Sample selected and words extracted · listen and review before cloning")
+                    } finally { candidate.delete();selected.delete();input.delete() }
                 } catch(e: Exception) { input.delete();throw e }
             } }
             42 -> safely { startJob("Importing and verifying model…",true) { context ->

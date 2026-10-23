@@ -120,8 +120,9 @@ object AudioImport {
             if(clipSeconds!=null) {
                 val missing=(clipSeconds*16000).roundToInt()-outputFrames
                 // Codec delay/padding can remove a few milliseconds at the stream boundary.
-                require(missing in 0..1600) { "The selected clip extends past the decoded audio." }
+                require(missing in -1600..1600) { "The selected clip extends past the decoded audio." }
                 if(missing>0) java.io.FileOutputStream(destination,true).use { it.write(ByteArray(missing*2)) }
+                if(missing<0) RandomAccessFile(destination,"rw").use { it.setLength(44L+(outputFrames+missing)*2L) }
                 outputFrames+=missing
             }
             require(outputFrames >= 3 * 16000) { "Use a file with at least 3 seconds of speech." }
