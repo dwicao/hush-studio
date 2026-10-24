@@ -100,3 +100,7 @@ docs/                Technical notes, verification log and GPU experiments
   - Priya: [CSTR VCTK Corpus](https://datashare.ed.ac.uk/handle/10283/3443), University of Edinburgh, CC BY 4.0.
 
 Full licence texts are included in the app under **Settings > Open-Source Licenses** and in [`app/src/main/assets/THIRD-PARTY-NOTICES.txt`](app/src/main/assets/THIRD-PARTY-NOTICES.txt).
+
+## License
+
+Hush Studio is licensed under the [Apache License 2.0](LICENSE). Bundled third-party components, the speech model and the built-in voice recordings keep their own licences, listed above and in the notices file.
