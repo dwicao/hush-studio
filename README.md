@@ -19,7 +19,7 @@ It is built for long-form narration such as video voiceovers, audiobook drafts a
 | | |
 |---|---|
 | Android | 9 or later (API 28+) |
-| CPU | 64-bit ARM (arm64-v8a). The standard build needs ARMv8.2 dot-product and FP16 support, found on most phones from 2019 onward. Older ARM64 phones need the compatibility build. |
+| CPU | 64-bit ARM (arm64-v8a). Phones with ARMv8.2 dot-product and FP16 support (most from 2019 onward) use a faster engine; older 64-bit phones run a compatible engine automatically. |
 | Memory | 4 GB RAM minimum; 6 GB recommended. Generation peaks at about 1.7 GB. |
 | Storage | About 650 MB free for the speech model, plus space for projects |
 | Network | Needed once, to download the 500 MB speech model |
@@ -52,10 +52,11 @@ Only clone your own voice, or a voice you have explicit permission to use. Do no
 Requirements: JDK 17 or later, Android SDK platform 36, NDK 28.2.13676358 and CMake 3.22.1.
 
 ```bash
-./gradlew -PmobileFast=true assembleDebug        # ARMv8.2 build (dot-product, FP16)
-./gradlew assembleDebug                          # compatibility build for older ARM64 CPUs
+./gradlew assembleDebug
 ./gradlew testDebugUnitTest lintDebug
 ```
+
+The APK contains two builds of the speech engine: `libvoxstudio_cpu_fast.so` (ARMv8.2 with dot-product and FP16, built by the `app` module) and `libvoxstudio_cpu.so` (baseline ARMv8, built by the `engine-compat` module from the same sources). At startup the app checks the CPU and loads the fast engine when it is supported.
 
 Release builds read signing details from an untracked `keystore.properties` file in the project root:
 
@@ -75,6 +76,7 @@ Device tests are run with `adb shell am instrument` after installing the app and
 ```
 app/src/main/java/   Kotlin app: screens, studio, playback, import, generation jobs
 app/src/main/cpp/    JNI bridge and the persistent model session for the native engine
+engine-compat/       Builds the baseline ARMv8 engine from the same native sources
 app/src/main/assets/ Built-in voices, offline speech-recognition model, licence notices
 vendor/voxcpm/       VoxCPM.cpp inference runtime (ggml)
 scripts/             Benchmark, test-fixture and voice-candidate tools

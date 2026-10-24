@@ -3,7 +3,8 @@ import java.util.Properties
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 val mobileOpenCl = providers.gradleProperty("mobileOpenCl").orNull == "true"
 val mobileGpu = providers.gradleProperty("mobileGpu").orNull == "true"
-val mobileFast = providers.gradleProperty("mobileFast").orNull == "true"
+// GPU experiments package a prebuilt CPU engine from dev-deps instead of building :engine-compat.
+val gpuBuild = mobileOpenCl || mobileGpu
 // Side-by-side test install (".dev") that never touches data in the main app.
 val devInstall = providers.gradleProperty("devInstall").orNull == "true"
 // Release signing comes from an untracked keystore.properties (storeFile, storePassword, keyAlias,
@@ -21,12 +22,11 @@ android {
         targetSdk = 36
         versionCode = 17
         versionName = "0.1.16"
-        buildConfigField("boolean", "MOBILE_FAST", mobileFast.toString())
         ndk { abiFilters += "arm64-v8a" }
-        externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=${if (mobileFast) "ON" else "OFF"}" } }
+        externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=ON" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    sourceSets.getByName("main").jniLibs.setSrcDirs(if(mobileOpenCl || mobileGpu) listOf(rootProject.file("dev-deps/cpu-jni").absolutePath) else emptyList<String>())
+    sourceSets.getByName("main").jniLibs.setSrcDirs(if(gpuBuild) listOf(rootProject.file("dev-deps/cpu-jni").absolutePath) else emptyList<String>())
     buildFeatures { buildConfig = true; resValues = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -60,6 +60,8 @@ val checkBuiltInVoices by tasks.registering {
 }
 tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkBuiltInVoices) }
 dependencies {
+    // The app builds the ARMv8.2 engine (libvoxstudio_cpu_fast.so); this adds the baseline one.
+    if (!gpuBuild) implementation(project(":engine-compat"))
     implementation("com.alphacephei:vosk-android:0.3.75")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

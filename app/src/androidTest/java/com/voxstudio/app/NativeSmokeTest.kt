@@ -60,7 +60,7 @@ class NativeSmokeTest {
             val wave=AudioFiles.read(output);val totalMs=android.os.SystemClock.elapsedRealtime()-before
             assertEquals(16000,wave.rate);assertTrue(wave.seconds>.5)
             assertTrue(wave.samples.any { kotlin.math.abs(it.toInt())>100 })
-            android.util.Log.i("VoxDeviceTest","benchmark fast=${BuildConfig.MOBILE_FAST} seed=4242 steps=$steps threads=$threads native_ms=$nativeMs total_ms=$totalMs audio_seconds=${wave.seconds} rtf=${totalMs/1000.0/wave.seconds}")
+            android.util.Log.i("VoxDeviceTest","benchmark fast=${NativeCpuEngine.fast} seed=4242 steps=$steps threads=$threads native_ms=$nativeMs total_ms=$totalMs audio_seconds=${wave.seconds} rtf=${totalMs/1000.0/wave.seconds}")
         } finally { output.delete() }
     }
 

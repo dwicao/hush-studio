@@ -108,14 +108,18 @@ object NativeEngine {
     val lastRunReusedModel get()=NativeCpuEngine.available && !runningGpu && NativeCpuEngine.lastRunReusedModel()
 }
 object NativeCpuEngine {
-    val available: Boolean = !BuildConfig.MOBILE_FAST || CpuCapabilities.supportsFast()
-    init { if (available) System.loadLibrary("voxstudio_cpu") }
+    /** The APK ships two builds of the engine: ARMv8.2 (dot-product, FP16) and baseline ARMv8. */
+    val fast: Boolean = CpuCapabilities.supportsFast() && runCatching { System.loadLibrary("voxstudio_cpu_fast") }.isSuccess
+    val available: Boolean = fast || runCatching { System.loadLibrary("voxstudio_cpu") }.isSuccess
+    /** Two threads measured fastest for the ARMv8.2 engine on big.LITTLE phones; the baseline engine uses four. */
+    val defaultThreads get() = if (fast) 2 else 4
+    init { android.util.Log.i("HushStudio","Speech engine: ${if (fast) "accelerated" else if (available) "compatible" else "unavailable"}") }
     @Suppress("unused")
     fun onProgress(stage: String, current: Int, total: Int, audioSeconds: Double) {
         StudioJobs.nativeProgress(stage,current,total,audioSeconds)
     }
     fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
-        require(available) { "This device needs the compatibility APK; its CPU lacks FP16/dot-product instructions." }
+        require(available) { "The speech engine could not start on this phone's processor." }
         return nativeSynthesize(model,reference,if(reference!=null) SpeechText.referencePrompt(transcript ?: "") else transcript,text,output,steps,threads)
     }
     fun cancel() { if (available) nativeCancel() }
@@ -137,7 +141,7 @@ object NativeGpuEngine {
         GpuWorkerService.progress?.invoke(stage,current,total,audioSeconds)
     }
     fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
-        require(available) { "This device needs the compatibility APK; its CPU lacks FP16/dot-product instructions." }
+        require(available) { "The speech engine could not start on this phone's processor." }
         return nativeSynthesize(model,reference,if(reference!=null) SpeechText.referencePrompt(transcript ?: "") else transcript,text,output,steps,threads)
     }
     fun cancel() { if (available) nativeCancel() }

@@ -64,7 +64,7 @@ class PipelineBenchmarkTest {
                 android.util.Log.i("VoxBenchmark","$label chunk=$index audio_s=${"%.2f".format(wave.seconds)} wav_sha=$sha $timing")
             }
             assertTrue(File(dir,"full.wav").isFile)
-            android.util.Log.i("VoxBenchmark","$label SUMMARY version=${BuildConfig.VERSION_NAME} fast=${BuildConfig.MOBILE_FAST} steps=$steps threads=$threads " +
+            android.util.Log.i("VoxBenchmark","$label SUMMARY version=${BuildConfig.VERSION_NAME} fast=${NativeCpuEngine.fast} steps=$steps threads=$threads " +
                 "chunks=${chunks.size} wall_ms=$wallMs audio_s=${"%.2f".format(audio)} rtf=${"%.3f".format(wallMs/1000.0/audio)} " +
                 "peak_rss_mb=${peak/1024} temp_before=${tempBefore/10.0} temp_after=${temperature(context)/10.0}")
         } finally {

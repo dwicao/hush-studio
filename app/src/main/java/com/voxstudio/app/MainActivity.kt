@@ -625,10 +625,10 @@ class MainActivity : Activity() {
         ui.sectionFooter(content,"Fast Preview is for drafts. Choose Best Quality if words sound blurred.")
         ui.sectionHeader(content,"Performance")
         val performance=ui.group(content)
-        val threads=store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)
+        val threads=store.prefs.getInt("threads",NativeCpuEngine.defaultThreads)
         ui.groupRow(performance,"CPU Threads",value=threads.toString(),chevron=true) {
             val values=listOf(2,4)
-            AlertDialog.Builder(this).setTitle("CPU Threads").setSingleChoiceItems(arrayOf("2 threads (recommended)","4 threads"),values.indexOf(threads)) { dialog,index ->
+            AlertDialog.Builder(this).setTitle("CPU Threads").setSingleChoiceItems(values.map { "$it threads${if(it==NativeCpuEngine.defaultThreads) " (recommended)" else ""}" }.toTypedArray(),values.indexOf(threads)) { dialog,index ->
                 store.prefs.edit().putInt("threads",values[index]).apply();dialog.dismiss();draw()
             }.setNegativeButton("Cancel",null).show()
         }
@@ -643,14 +643,14 @@ class MainActivity : Activity() {
             ui.groupRow(performance,"Experimental GPU",trailing=toggle)
         }
         val gpuNote=if(NativeEngine.gpuPackaged(this)) " GPU speed-up is not verified on any phone; if it fails, Hush Studio returns to CPU and turns it off." else ""
-        ui.sectionFooter(content,"Two threads suit most phones. Four can be slightly faster but uses the slower cores, adding heat and battery drain.$gpuNote")
+        ui.sectionFooter(content,(if(NativeCpuEngine.fast) "Two threads suit most phones. Four can be slightly faster but uses the slower cores, adding heat and battery drain." else "This phone uses the compatible engine, which runs best with four threads.")+gpuNote)
         store.prefs.getString("gpuDisabledReason",null)?.takeIf { NativeEngine.gpuPackaged(this) && !store.prefs.getBoolean("gpuExperimental",false) }?.let { ui.sectionFooter(content,"Last GPU attempt: $it") }
         ui.sectionHeader(content,"This Phone")
         val device=ui.group(content)
         val info=ActivityManager.MemoryInfo();(getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
         ui.groupRow(device,"Model",value="${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}")
         ui.groupRow(device,"Memory",value="${"%.1f".format(info.totalMem/1073741824.0)} GB")
-        ui.groupRow(device,"Engine",value=if(BuildConfig.MOBILE_FAST) "Accelerated CPU" else "Compatible CPU")
+        ui.groupRow(device,"Engine",value=if(NativeCpuEngine.fast) "Accelerated CPU" else if(NativeCpuEngine.available) "Compatible CPU" else "Unsupported")
         ui.groupRow(device,"Speech Model",value="VoxCPM 0.5B · Q4")
         ui.sectionHeader(content,"Privacy")
         val privacy=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(14)) }

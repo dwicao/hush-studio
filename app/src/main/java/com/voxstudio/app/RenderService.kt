@@ -178,7 +178,7 @@ object StudioJobs {
         sectionLabel = status.removeSuffix("…")
         val cache=NarrationCache(File(store.context.cacheDir,"narration-cache"))
         val reference=if(voice) File(dir,"reference.wav") else null
-        val key=cache.key(text,transcript,reference,"${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${BuildConfig.MOBILE_FAST}:$steps:${store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4)}")
+        val key=cache.key(text,transcript,reference,"${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${NativeCpuEngine.fast}:$steps:${store.prefs.getInt("threads",NativeCpuEngine.defaultThreads)}")
         if(reuse && cache.restore(key,temp)) {
             check(temp.renameTo(File(dir,"section-$index.wav")))
             File(dir,"timing-$index.txt").writeText("cache_hit=true\ngeneration_ms=${SystemClock.elapsedRealtime()-start}\n")
@@ -187,7 +187,7 @@ object StudioJobs {
         nativeActive = true
         val error = try {
             NativeEngine.synthesize(store.model.absolutePath,if (voice) File(dir,"reference.wav").absolutePath else null,
-                if (voice) transcript else null,text,temp.absolutePath,steps,store.prefs.getInt("threads",if(BuildConfig.MOBILE_FAST) 2 else 4).coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(4)))
+                if (voice) transcript else null,text,temp.absolutePath,steps,store.prefs.getInt("threads",NativeCpuEngine.defaultThreads).coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(4)))
         } finally { nativeActive=false }
         val nativeMs=SystemClock.elapsedRealtime()-start
         val modelReused=NativeEngine.lastRunReusedModel
