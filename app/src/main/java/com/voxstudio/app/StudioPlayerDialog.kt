@@ -64,6 +64,7 @@ class StudioPlayerDialog(
         super.onCreate(state)
         val root=column().apply { setBackgroundColor(bg);setPadding(dp(18),dp(14),dp(18),dp(14)) }
         setContentView(root)
+        root.padForSystemBars()
         window?.apply { setBackgroundDrawable(ColorDrawable(bg));matchSystemBars();setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN) }
         val heading=row(root)
         val headingText=column()

@@ -209,10 +209,10 @@ class MainActivity : Activity() {
         var navigationView: View?=null
         root.setOnApplyWindowInsetsListener { view,insets ->
             if(Build.VERSION.SDK_INT>=30) {
-                val bars=insets.getInsets(WindowInsets.Type.systemBars())
-                view.setPadding(0,bars.top,0,bars.bottom)
+                val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                view.setPadding(bars.left,bars.top,bars.right,bars.bottom)
                 navigationView?.visibility=if(insets.isVisible(WindowInsets.Type.ime())) View.GONE else View.VISIBLE
-            } else view.setPadding(0,insets.systemWindowInsetTop,0,insets.systemWindowInsetBottom)
+            } else view.setPadding(insets.systemWindowInsetLeft,insets.systemWindowInsetTop,insets.systemWindowInsetRight,insets.systemWindowInsetBottom)
             insets
         }
         setContentView(root)

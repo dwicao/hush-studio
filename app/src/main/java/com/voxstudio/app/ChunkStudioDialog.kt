@@ -86,6 +86,8 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
         val footer=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(10),dp(16),dp(12));setBackgroundColor(Palette.bar) }
         root.addView(View(activity).apply { setBackgroundColor(Palette.line) },LinearLayout.LayoutParams(-1,dp(1)))
         root.addView(footer)
+        // Top bar and page clear the status bar; the player bar takes the navigation-bar edge so its colour runs to the bottom.
+        root.padForSystemBars(bottom=false);footer.padForSystemBars(top=false)
         progressBox=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
         progressTitle=text("",14f,Palette.accent,true).also { progressBox.addView(it) }
         progressDetail=text("",12f,Palette.muted).also { progressBox.addView(it) }

@@ -7,11 +7,31 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.widget.*
 import kotlin.math.roundToInt
+
+/**
+ * Pads a full-screen window's content by the status bar, navigation bar and display cutout, on top
+ * of its own padding. Android 15+ draws apps that target API 35+ edge to edge, including full-screen
+ * dialogs, so content would otherwise sit under the bars. Insets are not consumed, so a child (such
+ * as a bottom bar) can take the edge this view skips.
+ */
+fun View.padForSystemBars(top: Boolean = true, bottom: Boolean = true) {
+    val base = intArrayOf(paddingLeft, paddingTop, paddingRight, paddingBottom)
+    setOnApplyWindowInsetsListener { view, insets ->
+        val (l, t, r, b) = if (Build.VERSION.SDK_INT >= 30)
+            insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()).let { listOf(it.left, it.top, it.right, it.bottom) }
+        else @Suppress("DEPRECATION") listOf(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+        view.setPadding(base[0] + l, base[1] + if (top) t else 0, base[2] + r, base[3] + if (bottom) b else 0)
+        insets
+    }
+    requestApplyInsets()
+}
 
 /**
  * Small component kit shared by every screen and dialog: a system-style type scale, grouped inset
