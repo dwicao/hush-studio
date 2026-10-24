@@ -15,7 +15,7 @@ object BuiltInVoices {
     data class Entry(val id: String, val name: String, val gender: String, val accent: String, val style: String,
                      val transcript: String, val file: String, val placeholder: Boolean) {
         val voiceId get() = PREFIX + id
-        val label get() = "${gender.replaceFirstChar { it.uppercase() }} · ${accentName(accent)} · $style"
+        val label get() = listOf(gender.replaceFirstChar { it.uppercase() }, accentName(accent), style).filter { it.isNotBlank() }.joinToString(" · ")
     }
     fun accentName(code: String) = when (code) {
         "US" -> "American"; "UK" -> "British"; "AU" -> "Australian"; "IE" -> "Irish"

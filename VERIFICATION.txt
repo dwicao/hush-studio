@@ -1,3 +1,24 @@
+VOX STUDIO 0.1.16 — licensed built-in voices (24 October 2026)
+
+The 20 placeholder voices (macOS system voices, which Apple licenses for personal,
+non-commercial use only) are removed. 6 built-in voices now ship, each a real
+recording under a licence that allows commercial distribution:
+  Aria (LJ Speech, public domain), Jenny (Dioco) (Jenny dataset, commercial use with
+  the required name), Maya / Ethan / Cole (Hi-Fi TTS speakers 92, 6097, 9017, CC BY 4.0),
+  Priya (VCTK p248, Indian English female, CC BY 4.0).
+Jenny's terms were read at github.com/dioco-group/jenny-tts-dataset. Credits are in
+THIRD-PARTY-NOTICES.txt; catalog.json records each source file and licence. Clips were
+fetched one at a time (about 3 MB total) with scripts/fetch-voice-candidates.py, trimmed
+and converted to 16 kHz mono. Transcripts are the datasets' own, with numbers spelled out.
+checkBuiltInVoices (release guard) passes.
+
+Qualification on Moto G71 (3 seeds x 2 sentences, pass = ASR hears 6 of 8 key words):
+36 of 36 takes passed, every voice 6/6, outputs 3.9-7.7 s (no runaway generation).
+BuiltInVoiceTest: Aria and Ethan outputs distinct in pitch; 2 of 2 takes intelligible.
+Device suite: 19 of 20 in one run; the failure (TextScrollingTest drag) happened while
+the phone screen had gone to sleep, and the test passed on rerun with the screen awake.
+ASR is a coarse intelligibility check, not a judgement of naturalness or likeness.
+
 VOX STUDIO 0.1.16 — built-in voices and redesign (23 October 2026)
 
 Built-in voices: 20 placeholder clips (macOS voices, 4-5 s, not for release).

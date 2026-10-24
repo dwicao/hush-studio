@@ -4,6 +4,22 @@ OpenBMB VoxCPM and bluryar/VoxCPM.cpp (Apache-2.0).
 Kotlin standard library: Copyright JetBrains s.r.o. and contributors (Apache-2.0).
 Runtime source commit e5b89534e379c79b923c9969b79c3858d140bedb.
 
+BUILT-IN VOICES
+Each built-in voice is a short recording used as a voice reference. Display names are
+invented and do not identify the speakers, except Jenny (Dioco), as its licence requires.
+- Aria: LJ Speech Dataset 1.1 (Keith Ito; read by Linda Johnson for LibriVox). Public domain.
+  https://keithito.com/LJ-Speech-Dataset/
+- Jenny (Dioco): Jenny TTS dataset by Dioco. Commercial use permitted with attribution.
+  https://github.com/dioco-group/jenny-tts-dataset
+- Maya, Ethan, Cole: Hi-Fi Multi-Speaker English TTS Dataset (Hi-Fi TTS), E. Bakhturina,
+  V. Lavrukhin, B. Ginsburg, Y. Zhang, NVIDIA, 2021. CC BY 4.0. Source recordings from
+  LibriVox (public domain). https://openslr.org/109/
+  https://creativecommons.org/licenses/by/4.0/
+- Priya: CSTR VCTK Corpus 0.92, Centre for Speech Technology Research, University of
+  Edinburgh. CC BY 4.0. https://datashare.ed.ac.uk/handle/10283/3443
+  https://creativecommons.org/licenses/by/4.0/
+Clips were trimmed and converted to 16 kHz mono; no other changes were made.
+
 
 
 vendor/voxcpm/NOTICE

@@ -264,29 +264,32 @@ Release signing: put storeFile/storePassword/keyAlias/keyPassword in an untracke
 keystore.properties; without it, assembleRelease produces an unsigned APK.
 
 BUILT-IN VOICES (0.1.16)
-The app ships 20 built-in voices next to the user's cloned voices. Every voice,
-built-in or cloned, is a short reference clip plus its exact transcript for the
-one shared VoxCPM model; there are no per-voice models. 20 clips add about 3 MB.
-Catalog: app/src/main/assets/voices/catalog.json (id, name, gender, accent, style,
-transcript, file, placeholder, license). With no voice chosen, the first built-in
-voice is used, because the reference-free model voice changes speaker between
-chunks (measured 91-229 Hz median pitch across five seeds).
+The app ships 6 built-in voices next to the user's cloned voices. Every voice, built-in
+or cloned, is a short reference clip plus its exact transcript for the one shared VoxCPM
+model; there are no per-voice models. The 6 clips add about 1.4 MB.
+  Aria          LJ Speech 1.1 (public domain), US female audiobook narrator
+  Jenny (Dioco) Jenny TTS dataset (commercial use with attribution; name required)
+  Maya          Hi-Fi TTS speaker 92 (CC BY 4.0), female narrator
+  Ethan         Hi-Fi TTS speaker 6097 (CC BY 4.0), male narrator
+  Cole          Hi-Fi TTS speaker 9017 (CC BY 4.0), male narrator
+  Priya         VCTK p248 (CC BY 4.0), Indian English female
+Credits: app/src/main/assets/THIRD-PARTY-NOTICES.txt (Settings > Open-Source Licenses).
+Catalog: app/src/main/assets/voices/catalog.json records each clip's source file and licence.
+Display names are invented and do not identify the speakers, except Jenny (Dioco).
+With no voice chosen, Aria is used, because the reference-free model voice changes
+speaker between chunks (measured 91-229 Hz median pitch across five seeds).
 
-CURRENT CLIPS ARE PLACEHOLDERS. scripts/make-placeholder-voices.sh generates them
-from macOS voices for development. They are gitignored, labelled "not for release"
-in the app, and assembleRelease fails (checkBuiltInVoices) until every entry has a
-real clip and "placeholder": false.
-
-Replacing a placeholder with a real voice:
-- Rights: written consent from the speaker for commercial voice cloning and
-  distribution in the app, or a licence that allows it. Record the licence in the
-  catalog entry and in THIRD-PARTY-NOTICES.txt.
-- Audio: one speaker, quiet room, no music or reverb, natural narration pace,
-  4-6 seconds (longer clips add encode and prefill time to every chunk),
-  WAV 16 kHz mono 16-bit, no long silence at either end.
-- Transcript: the exact words spoken, with punctuation.
-- Qualification: run VoiceQualificationTest (see below) and ship only voices that
-  pass. Clip quality decides reliability: one placeholder produced intelligible
-  speech in 1 of 5 seeds while another passed 4 of 5.
+Adding or replacing a built-in voice:
+- Rights: a public-domain or commercially licensed recording (or written consent from the
+  speaker). Not macOS/iOS system voices (Apple licenses them for personal, non-commercial
+  use) and not non-commercial datasets (EARS, Expresso). Record source and licence in the
+  catalog entry and THIRD-PARTY-NOTICES.txt.
+- Audio: one speaker, clean, 5-10 s, WAV 16 kHz mono 16-bit, no long silences.
+- Transcript: exactly what is spoken, numbers spelled as spoken.
+- scripts/fetch-voice-candidates.py fetches single clips (a few MB in total) from
+  Hi-Fi TTS, LJ Speech, Jenny and VCTK through the Hugging Face viewer API, with
+  transcripts and licence notes, into artifacts/voice-candidates/.
+- Qualification: run VoiceQualificationTest and ship only voices that pass.
   adb shell am instrument -w -e class com.voxstudio.app.VoiceQualificationTest \
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
+assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
