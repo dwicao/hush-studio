@@ -568,9 +568,9 @@ enum class BufferUsage {
 
 如果后续实现与这些文档发生偏离，必须优先更新计划和契约说明，再继续写代码。
 
-- 2026-10-22 Android experiment: app wrapper enables existing Vulkan backend without modifying tensor/operator or shared WeightStore contracts. Build passed; Moto G71 loader rejected because Vulkan 1.2 is required. CPU remains default; see ../../GPU-EXPERIMENT.txt. No GPU performance claim.
+- 2026-10-22 Android experiment: app wrapper enables existing Vulkan backend without modifying tensor/operator or shared WeightStore contracts. Build passed; Moto G71 loader rejected because Vulkan 1.2 is required. CPU remains default; see ../../docs/gpu-vulkan-experiment.txt. No GPU performance claim.
 
-- 2026-10-23 Android OpenCL investigation: explicit OpenCL backend initialization and operation preflight added, preserving shared WeightStore, buffer ownership and operator layouts. Adreno 619 kernel probe passed; full model reaches unsupported-operation boundary. CPU remains default; see ../../OPENCL-EXPERIMENT.txt.
+- 2026-10-23 Android OpenCL investigation: explicit OpenCL backend initialization and operation preflight added, preserving shared WeightStore, buffer ownership and operator layouts. Adreno 619 kernel probe passed; full model reaches unsupported-operation boundary. CPU remains default; see ../../docs/gpu-opencl-experiment.txt.
 
 - 2026-10-23: Android automatic backend prototype adds isolated GPU-worker/CPU retry. OpenCL scheduler uses explicit CPU State/KV/Output staging for unsupported operations, preserving shared WeightStore. This is an experimental host-staging exception; state-copy qualification still fails on Moto G71. GPU process crash and CPU retry tested successfully; no full-GPU or speed claim.
 

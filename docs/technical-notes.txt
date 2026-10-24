@@ -57,7 +57,7 @@ are retained as an unsaved draft until you tap Clone voice.
 
 DEVICE TARGET
 Android 9+ (API 28), ARM64 only. Initial tests include a 6 GB-class phone. Limited checks on a Moto G71 5G (Android 12, SM6375) are documented in
-VERIFICATION.txt. Broader device compatibility, thermal throttling, battery use
+docs/verification-log.txt. Broader device compatibility, thermal throttling, battery use
 and voice quality remain unverified. There is no
 cloud inference fallback. This is a debug-signed prototype, not a Play Store
 release or a claim of production readiness.
@@ -163,7 +163,7 @@ Benchmark arguments: benchThreads and benchSteps; seed 4242 is test-only.
 This test requires a connected ARM64 Android device/emulator; host unit tests
 cover WAV parsing, reference conversion, invalid inputs, section assembly and
 progress timing/milestones.
-See VERIFICATION.txt for checks actually completed in this environment.
+See docs/verification-log.txt for checks actually completed in this environment.
 
 LIMITATIONS / NEXT WORK
 - Broader device tests, accessibility review, sustained performance and peak-RAM measurement.
@@ -208,7 +208,7 @@ uses the existing CPU inference engine; no GPU speedup is claimed.
 
 0.1.15 includes automatic GPU attempt and protected CPU fallback. The Moto G71
 currently fails full GPU qualification and runs CPU after its first failed
-attempt. See GPU-EXPERIMENT.txt for exact limits and two-engine build steps.
+attempt. See docs/gpu-vulkan-experiment.txt for exact limits and two-engine build steps.
 
 Automatic voice import: choose an audio file; the app examines up to the first
 minute in 20-second windows, ranks up to five-second samples by active energy,

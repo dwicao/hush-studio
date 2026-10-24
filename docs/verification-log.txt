@@ -170,7 +170,7 @@ GPU state compatibility limitation from 0.1.12 remains; no new GPU speed claim.
 --- Earlier checks ---
 
 VOX STUDIO 0.1.12 — automatic backend prototype
-See GPU-EXPERIMENT.txt for qualification results. Full GPU narration remains
+See docs/gpu-vulkan-experiment.txt for qualification results. Full GPU narration remains
 unqualified on Moto G71. CPU retry after actual GPU process death passed; a
 subsequent automatic CPU generation passed. Builds/lint/13 host tests passed.
 
@@ -610,7 +610,7 @@ The instrumentation package was removed. The updated main app is open on Create.
 
 DEVICE / METHOD
 Moto G71 5G; Android 12; SM6375; 6 GB RAM class.
-Same pinned VoxCPM-0.5B Q4 model and runtime as 0.1.1 (see README.txt).
+Same pinned VoxCPM-0.5B Q4 model and runtime as 0.1.1 (see docs/technical-notes.txt).
 Controlled tests used the same 82-character English script, no reference,
 seed 4242, and the settings below. Times include synthesis/model loading;
 output duration differs slightly across backend settings despite fixed seed.

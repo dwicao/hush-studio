@@ -50,5 +50,5 @@ Rebuilding both engines: first assembleDebug with -PmobileFast=true and GPU flag
 OFF. Extract lib/arm64-v8a/libvoxstudio_cpu.so from that APK into
 dev-deps/cpu-jni/arm64-v8a/libvoxstudio_cpu.so relative to project. Then build
 with -PmobileFast=true -PmobileOpenCl=true. OpenCL headers and link-only vendor
-library preparation are documented in OPENCL-EXPERIMENT.txt. Use matching CPU
+library preparation are documented in docs/gpu-opencl-experiment.txt. Use matching CPU
 and GPU architecture flags; this artifact requires FP16/dot-product CPU support.
