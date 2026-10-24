@@ -1,3 +1,14 @@
+HUSH STUDIO 0.1.16 — rename, app icon, real app ID (24 October 2026)
+
+Renamed to Hush Studio; Play application ID com.orailnoor.hush. New launcher icon from
+the supplied purple orb artwork (adaptive icon with white background, all densities,
+round variant; 512x512 store icon in artifacts/store/). Notification icon is now a white
+waveform glyph, as Android requires silhouettes. Testing now uses com.orailnoor.hush
+directly (no .dev variant); the old com.voxstudio.app install was not touched.
+Device suite on com.orailnoor.hush (Moto G71, fresh install, model hash verified):
+OK, 20 of 20 tests in 337.8 s. Tests no longer rely on existing library content and no
+longer leave test projects behind (library empty after the run).
+
 VOX STUDIO 0.1.16 — licensed built-in voices (24 October 2026)
 
 The 20 placeholder voices (macOS system voices, which Apple licenses for personal,

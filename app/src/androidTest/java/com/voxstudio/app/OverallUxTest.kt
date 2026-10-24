@@ -19,6 +19,15 @@ class OverallUxTest {
         val inst=InstrumentationRegistry.getInstrumentation()
         val store=StudioStore(inst.targetContext)
         val before=store.prefs.getString("script","")
+        // A temporary narration so Library shows its search field even on a fresh install.
+        val sample=File(store.projects,UUID.randomUUID().toString()).also { it.mkdirs() }
+        AudioFiles.write(File(sample,"full.wav"),ShortArray(16000) { 2000 })
+        AudioFiles.write(File(sample,"section-0.wav"),ShortArray(16000) { 2000 })
+        store.saveMetadata(sample,JSONObject().put("title","UX search sample").put("created",1L).put("voice",false)
+            .put("sections",JSONArray().put("Sample words")).put("transcript","").put("steps",6))
+        try { navigateAndSearch(inst,store,before) } finally { sample.deleteRecursively() }
+    }
+    private fun navigateAndSearch(inst: android.app.Instrumentation,store: StudioStore,before: String?) {
         val activity=inst.startActivitySync(Intent(inst.targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         fun tab(name: String) {
             inst.runOnMainSync { views(activity.window.decorView).first { it.contentDescription=="$name tab" }.performClick() }

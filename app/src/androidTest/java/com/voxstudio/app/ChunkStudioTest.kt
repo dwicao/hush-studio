@@ -34,8 +34,10 @@ class ChunkStudioTest {
             store.deleteProject(dir);store.prefs.edit().putString("studioProjectId",previous).apply()
         }
     }
+    /** Opens a partly generated project in the studio, then removes it so no test data stays in the library. */
     @Test fun createVisibleStudioPreview() {
         val inst=InstrumentationRegistry.getInstrumentation();val context=inst.targetContext
+        val store=StudioStore(context);val previous=store.prefs.getString("studioProjectId",null)
         val text="So, I built a PC and attached it to the back of my phone. It's a complete Linux computer, but it's small enough to fit in my pocket, which means I can carry it around wherever I go.\n\nIn this video, I'll show you how I built it, how everything works, and what I can actually do with this setup. Let's get started.\n\nFor this build, I'm using a Raspberry Pi Zero. Its small size lets it fit behind my phone, and its low power consumption means I can power it directly from the phone."
         val dir=ChunkProjects.create(context,text,"Studio preview",null,4)
         NativeEngine.backendForTesting="cpu"
@@ -45,6 +47,16 @@ class ChunkStudioTest {
             activity.javaClass.getDeclaredMethod("openStudio",File::class.java,Boolean::class.javaPrimitiveType).apply { isAccessible=true }.invoke(activity,dir,false)
         }
         inst.waitForIdleSync()
-        println("Preview project: ${dir.name}")
+        try {
+            inst.runOnMainSync {
+                // The studio is a full-screen dialog with its own window.
+                val studio=activity.javaClass.getDeclaredField("chunkStudio").apply { isAccessible=true }.get(activity) as android.app.Dialog
+                assertTrue(studio.isShowing)
+                assertTrue(views(studio.window!!.decorView).any { it.contentDescription?.toString()?.startsWith("Chunk 1, Ready")==true })
+            }
+        } finally {
+            inst.runOnMainSync { activity.finish() };inst.waitForIdleSync()
+            store.deleteProject(dir);store.prefs.edit().putString("studioProjectId",previous).apply()
+        }
     }
 }

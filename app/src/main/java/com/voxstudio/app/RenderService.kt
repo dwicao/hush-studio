@@ -237,14 +237,14 @@ class RenderService : Service() {
         else startForeground(7,notification())
         val task = StudioJobs.takeTask()
         if (task == null) { stopSelf(); return START_NOT_STICKY }
-        wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"VoxStudio:render").apply { acquire(2 * 60 * 60 * 1000L) }
+        wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"HushStudio:render").apply { acquire(2 * 60 * 60 * 1000L) }
         handler.post(refresh); StudioJobs.run(this,task)
         return START_NOT_STICKY
     }
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return Notification.Builder(this,"render").setContentTitle("Vox Studio").setContentText(StudioJobs.status)
-            .setSmallIcon(com.voxstudio.app.R.drawable.ic_vox).setContentIntent(open).setOngoing(true)
+        return Notification.Builder(this,"render").setContentTitle(getString(R.string.app_name)).setContentText(StudioJobs.status)
+            .setSmallIcon(com.voxstudio.app.R.drawable.ic_tab_create).setContentIntent(open).setOngoing(true)
             .setProgress(100,StudioJobs.progress.coerceAtLeast(0),StudioJobs.progress < 0).build()
     }
     fun finishJob() { handler.post { handler.removeCallbacks(refresh); wake?.let { if (it.isHeld) it.release() }; wake = null; stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() } }

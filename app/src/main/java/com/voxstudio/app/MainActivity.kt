@@ -642,7 +642,7 @@ class MainActivity : Activity() {
             }
             ui.groupRow(performance,"Experimental GPU",trailing=toggle)
         }
-        val gpuNote=if(NativeEngine.gpuPackaged(this)) " GPU speed-up is not verified on any phone; if it fails, Vox Studio returns to CPU and turns it off." else ""
+        val gpuNote=if(NativeEngine.gpuPackaged(this)) " GPU speed-up is not verified on any phone; if it fails, Hush Studio returns to CPU and turns it off." else ""
         ui.sectionFooter(content,"Two threads suit most phones. Four can be slightly faster but uses the slower cores, adding heat and battery drain.$gpuNote")
         store.prefs.getString("gpuDisabledReason",null)?.takeIf { NativeEngine.gpuPackaged(this) && !store.prefs.getBoolean("gpuExperimental",false) }?.let { ui.sectionFooter(content,"Last GPU attempt: $it") }
         ui.sectionHeader(content,"This Phone")
@@ -839,8 +839,8 @@ class MainActivity : Activity() {
         // Denied: explain, and offer the paths that still work. "Don't ask again" needs app settings.
         val blocked=!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
         AlertDialog.Builder(this).setTitle("Microphone not allowed")
-            .setMessage(if(blocked) "Recording is turned off for Vox Studio. Allow the microphone in app settings, or import an existing recording instead."
-                else "Vox Studio needs the microphone only while you record a voice sample. You can import an existing recording instead.")
+            .setMessage(if(blocked) "Recording is turned off for Hush Studio. Allow the microphone in app settings, or import an existing recording instead."
+                else "Hush Studio needs the microphone only while you record a voice sample. You can import an existing recording instead.")
             .setNegativeButton("Import audio") { _,_ -> safely { chooseFile(41,"audio/*") } }
             .setPositiveButton(if(blocked) "Open app settings" else "Close") { _,_ ->
                 if(blocked) safely { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.fromParts("package",packageName,null))) }

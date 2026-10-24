@@ -1,11 +1,11 @@
 #!/bin/zsh
-# Provisions synthetic device-test fixtures into the side-by-side dev package only.
-# Usage: scripts/provision-dev-fixtures.sh [package]   (default com.voxstudio.app.dev)
+# Provisions synthetic device-test fixtures into the Hush Studio test install.
+# Usage: scripts/provision-dev-fixtures.sh [package]   (default com.orailnoor.hush)
 # Generates audio on this Mac (macOS `say` + `afconvert`); no personal recordings are used.
-# Refuses to touch com.voxstudio.app, whose voices and projects belong to the user.
+# Refuses to touch com.voxstudio.app, the original install holding the user's voices and projects.
 set -euo pipefail
-pkg=${1:-com.voxstudio.app.dev}
-[[ $pkg == com.voxstudio.app ]] && { echo "Refusing to modify the user's package"; exit 1; }
+pkg=${1:-com.orailnoor.hush}
+[[ $pkg == com.voxstudio.app ]] && { echo "Refusing to modify the original Vox Studio install (user data)"; exit 1; }
 ADB=${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 # 1. Clear English reference speech (about 7 s; tests clip the first 5 s), 16 kHz mono PCM like an app recording.

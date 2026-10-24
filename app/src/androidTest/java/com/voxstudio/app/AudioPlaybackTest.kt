@@ -11,8 +11,9 @@ import java.io.File
 class AudioPlaybackTest {
     @Test fun playerCanPauseSeekChangeSpeedAndRelease() {
         val inst=InstrumentationRegistry.getInstrumentation()
-        // Studio projects can be partial; play the newest one that has a full export.
-        val source=StudioStore(inst.targetContext).history().map { File(it,"full.wav") }.first { it.isFile }
+        // Self-contained: a 5 s tone, so the test also passes on a fresh install with an empty library.
+        val source=File(inst.targetContext.cacheDir,"playback-test.wav")
+        AudioFiles.write(source,ShortArray(16000*5) { (kotlin.math.sin(it*2.0*Math.PI*220/16000)*4000).toInt().toShort() })
         lateinit var player: AudioPlayback
         val ready=CountDownLatch(1)
         inst.runOnMainSync {
@@ -41,6 +42,6 @@ class AudioPlaybackTest {
                 assertFalse(player.playing)
                 android.util.Log.i("VoxPlayerTest","Prepared, sought, speed changed while paused, skipped to start, played and paused")
             }
-        } finally { inst.runOnMainSync { player.release() } }
+        } finally { inst.runOnMainSync { player.release() };source.delete() }
     }
 }

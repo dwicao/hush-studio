@@ -1,4 +1,6 @@
-VOX STUDIO — Android prototype, version 0.1.16
+HUSH STUDIO (formerly Vox Studio) — Android prototype, version 0.1.16
+Play application ID: com.orailnoor.hush (permanent once published).
+The internal Kotlin/JNI package stays com.voxstudio.app; it is not visible to users.
 
 Offline English narration and reference-conditioned voice cloning using
 OpenBMB VoxCPM-0.5B and the community VoxCPM.cpp runtime.
@@ -257,9 +259,9 @@ bounded archived takes (3 per chunk), cleanup of partial files after process
 death, explanatory microphone-denial dialog, font-scale-safe buttons,
 target API 36 with OnBackInvokedCallback back handling.
 Testing without touching personal data: build with -PdevInstall=true to install
-com.voxstudio.app.dev beside the real app; scripts/provision-dev-fixtures.sh
-provisions synthetic fixtures. Do NOT run connectedAndroidTest against the real
-package: Gradle uninstalls the app afterwards, deleting voices and projects.
+com.orailnoor.hush.dev ("Hush Studio Dev") beside the real app; scripts/provision-dev-fixtures.sh
+provisions synthetic fixtures. Do NOT run connectedAndroidTest against an installed
+main app: Gradle uninstalls the app afterwards, deleting voices and projects.
 Release signing: put storeFile/storePassword/keyAlias/keyPassword in an untracked
 keystore.properties; without it, assembleRelease produces an unsigned APK.
 

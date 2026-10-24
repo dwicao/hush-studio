@@ -4,7 +4,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 val mobileOpenCl = providers.gradleProperty("mobileOpenCl").orNull == "true"
 val mobileGpu = providers.gradleProperty("mobileGpu").orNull == "true"
 val mobileFast = providers.gradleProperty("mobileFast").orNull == "true"
-// Side-by-side test install that never touches the user's com.voxstudio.app data.
+// Side-by-side test install (".dev") that never touches data in the main app.
 val devInstall = providers.gradleProperty("devInstall").orNull == "true"
 // Release signing comes from an untracked keystore.properties (storeFile, storePassword, keyAlias,
 // keyPassword). Without it, release builds are produced unsigned and cannot be installed.
@@ -16,7 +16,7 @@ android {
     compileSdk = 36
     ndkVersion = "28.2.13676358"
     defaultConfig {
-        applicationId = "com.voxstudio.app"
+        applicationId = "com.orailnoor.hush"
         minSdk = 28
         targetSdk = 36
         versionCode = 17
@@ -32,9 +32,9 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildTypes {
-        debug { if (devInstall) { applicationIdSuffix = ".dev"; resValue("string", "app_name", "Vox Studio Dev") } else resValue("string", "app_name", "Vox Studio") }
+        debug { if (devInstall) { applicationIdSuffix = ".dev"; resValue("string", "app_name", "Hush Studio Dev") } else resValue("string", "app_name", "Hush Studio") }
         release {
-            isMinifyEnabled = false; resValue("string", "app_name", "Vox Studio")
+            isMinifyEnabled = false; resValue("string", "app_name", "Hush Studio")
             signingConfig = releaseKeys?.let { keys: Properties -> signingConfigs.create("release") {
                 storeFile = rootProject.file(keys.getProperty("storeFile")); storePassword = keys.getProperty("storePassword")
                 keyAlias = keys.getProperty("keyAlias"); keyPassword = keys.getProperty("keyPassword")

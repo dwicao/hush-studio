@@ -37,7 +37,7 @@ class VoiceLibrary(private val root: File) {
             val created=System.currentTimeMillis()
             Properties().apply {
                 setProperty("name",title); setProperty("transcript",words); setProperty("created",created.toString())
-            }.also { data -> File(temp,"voice.properties").writer(Charsets.UTF_8).use { data.store(it,"Vox Studio saved voice") } }
+            }.also { data -> File(temp,"voice.properties").writer(Charsets.UTF_8).use { data.store(it,"Hush Studio saved voice") } }
             check(temp.renameTo(destination)) { "Could not save cloned voice." }
             Voice(id,title,words,created,File(destination,"reference.wav"))
         } finally { temp.deleteRecursively() }
@@ -52,7 +52,7 @@ class VoiceLibrary(private val root: File) {
         data.setProperty("name",title)
         val temp=File(dir,"voice.properties.tmp")
         try {
-            temp.writer(Charsets.UTF_8).use { data.store(it,"Vox Studio saved voice") }
+            temp.writer(Charsets.UTF_8).use { data.store(it,"Hush Studio saved voice") }
             check(temp.renameTo(File(dir,"voice.properties"))) { "Could not rename voice." }
         } finally { temp.delete() }
         voice.copy(name=title)

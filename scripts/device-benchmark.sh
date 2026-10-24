@@ -4,7 +4,7 @@
 # Installs nothing: build and `adb install -r` the app and test APKs first. Never use
 # connectedAndroidTest against the user's package; it uninstalls the app (deleting its data).
 set -euo pipefail
-label=${1:?label}; threads=${2:-2}; steps=${3:-6}; pkg=${4:-com.voxstudio.app.dev}
+label=${1:?label}; threads=${2:-2}; steps=${3:-6}; pkg=${4:-com.orailnoor.hush}
 ADB=${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}
 out="$(cd "$(dirname "$0")/.." && pwd)/artifacts/benchmarks"; mkdir -p "$out"
 log="$out/$label-$(date +%Y%m%d-%H%M%S).log"

@@ -1,4 +1,4 @@
-Vox Studio — third-party software notices
+Hush Studio — third-party software notices
 
 OpenBMB VoxCPM and bluryar/VoxCPM.cpp (Apache-2.0).
 Kotlin standard library: Copyright JetBrains s.r.o. and contributors (Apache-2.0).
