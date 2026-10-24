@@ -5,6 +5,8 @@ local.properties
 **/.cxx/
 *.gguf
 *.wav
+# Licensed built-in voice clips (credited in THIRD-PARTY-NOTICES.txt) are part of the app.
+!app/src/main/assets/voices/*.wav
 
 .kotlin/
 .DS_Store
