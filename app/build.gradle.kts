@@ -20,8 +20,8 @@ android {
         applicationId = "com.orailnoor.hush"
         minSdk = 28
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.1.16"
+        versionCode = 18
+        versionName = "0.1.17"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=ON" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
