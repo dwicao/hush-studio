@@ -5,6 +5,10 @@ val mobileOpenCl = providers.gradleProperty("mobileOpenCl").orNull == "true"
 val mobileGpu = providers.gradleProperty("mobileGpu").orNull == "true"
 // GPU experiments package a prebuilt CPU engine from dev-deps instead of building :engine-compat.
 val gpuBuild = mobileOpenCl || mobileGpu
+// In-app reports go to Firestore (see docs/play-console.md). Set hushReportProjectId and
+// hushReportApiKey in gradle.properties; empty values keep reports queued on the phone.
+val reportProjectId = providers.gradleProperty("hushReportProjectId").orNull ?: ""
+val reportApiKey = providers.gradleProperty("hushReportApiKey").orNull ?: ""
 // Side-by-side test install (".dev") that never touches data in the main app.
 val devInstall = providers.gradleProperty("devInstall").orNull == "true"
 // Release signing comes from an untracked keystore.properties (storeFile, storePassword, keyAlias,
@@ -22,6 +26,8 @@ android {
         targetSdk = 36
         versionCode = 18
         versionName = "0.1.17"
+        buildConfigField("String", "REPORT_PROJECT_ID", "\"$reportProjectId\"")
+        buildConfigField("String", "REPORT_API_KEY", "\"$reportApiKey\"")
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { cppFlags += listOf("-std=c++17", "-O3"); arguments += "-DVOX_MOBILE_OPENCL=${if (mobileOpenCl) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_GPU=${if (mobileGpu) "ON" else "OFF"}"; arguments += "-DVOX_MOBILE_FAST=ON" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

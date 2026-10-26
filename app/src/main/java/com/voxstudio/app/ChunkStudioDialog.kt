@@ -61,6 +61,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
     private fun row(parent: LinearLayout)=LinearLayout(activity).apply { gravity=Gravity.CENTER_VERTICAL;parent.addView(this,LinearLayout.LayoutParams(-1,-2)) }
     private fun gap(parent: LinearLayout,n: Int=12) { parent.addView(Space(activity),LinearLayout.LayoutParams(1,dp(n))) }
     private fun meta()=store.metadata(dir)
+    private fun voiceKind()=meta().optString("voiceId").let { if(it.startsWith(BuiltInVoices.PREFIX)) "built-in" else if(it.isNotEmpty()) "cloned" else "model" }
     private fun parts()=meta().getJSONArray("sections")
     private fun file(index: Int)=File(dir,"section-$index.wav")
     private fun missing()=(0 until parts().length()).filter { !file(it).isFile }
@@ -210,6 +211,10 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
                 actions.addView(button(if(ready) "Regenerate" else "Generate",!ready) { generate(listOf(i),ready) }.apply { isEnabled=!busy;alpha=if(busy) .35f else 1f },LinearLayout.LayoutParams(0,-2,1.2f))
                 actions.addView(Space(activity),LinearLayout.LayoutParams(dp(8),1))
                 actions.addView(button("Edit") { editChunk() }.apply { isEnabled=!busy;alpha=if(busy) .35f else 1f;contentDescription="Edit chunk ${i+1} text" },LinearLayout.LayoutParams(0,-2,.9f))
+                if(ready) card.addView(text("Report this audio",13f,Palette.muted).apply {
+                    setPadding(0,dp(12),0,dp(2));isClickable=true;isFocusable=true;contentDescription="Report chunk ${i+1} audio"
+                    setOnClickListener { guard { ReportDialog.show(activity,chunks.getString(i),voiceKind()) } }
+                })
             }
             document.addView(card,LinearLayout.LayoutParams(-1,-2));gap(document,10)
         }

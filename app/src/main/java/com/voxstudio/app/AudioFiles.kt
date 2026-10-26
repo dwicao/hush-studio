@@ -102,6 +102,52 @@ object AudioFiles {
             dest.writeBytes("data"); u32((frames * 2).toInt())
         }
     }
+    /** RIFF INFO tags marking an export as AI-generated speech (title, comment, software, date). */
+    fun aiLabel(title: String, date: java.util.Date = java.util.Date()) = linkedMapOf(
+        "INAM" to title,
+        "ICMT" to "AI-generated speech. Created offline with Hush Studio using the VoxCPM speech model.",
+        "ISFT" to "Hush Studio ${BuildConfig.VERSION_NAME}",
+        "ICRD" to java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(date))
+    /**
+     * Streams a PCM WAV to [output] with a LIST/INFO chunk of [tags] between "fmt " and "data".
+     * The audio bytes are copied unchanged, so the export sounds identical to the narration.
+     */
+    fun writeLabeled(source: File, output: java.io.OutputStream, tags: Map<String, String>) = RandomAccessFile(source, "r").use { f ->
+        fun tag(): String = ByteArray(4).also { f.readFully(it) }.toString(Charsets.US_ASCII)
+        require(tag() == "RIFF") { "Narration audio is not a WAV file." }
+        val riffEnd = f.u32() + 8
+        require(riffEnd <= f.length() && tag() == "WAVE") { "Incomplete WAV file." }
+        var fmt: ByteArray? = null; var dataAt = -1L; var dataSize = 0L
+        while (f.filePointer + 8 <= riffEnd) {
+            val id = tag(); val size = f.u32(); val start = f.filePointer
+            require(start + size <= riffEnd) { "Invalid WAV chunk length." }
+            if (id == "fmt ") fmt = ByteArray(size.toInt()).also { f.readFully(it) }
+            if (id == "data" && dataAt < 0) { dataAt = start; dataSize = size }
+            f.seek(start + size + size % 2)
+        }
+        require(fmt != null && dataAt >= 0) { "WAV has no audio." }
+        val info = java.io.ByteArrayOutputStream()
+        fun le32(out: java.io.OutputStream, n: Long) { for (i in 0 until 4) out.write(((n ushr (8 * i)) and 255).toInt()) }
+        info.write("INFO".toByteArray(Charsets.US_ASCII))
+        tags.forEach { (id, value) ->
+            require(id.length == 4) { "RIFF tag ids are four characters." }
+            val bytes = value.toByteArray(Charsets.UTF_8) + 0
+            info.write(id.toByteArray(Charsets.US_ASCII)); le32(info, bytes.size.toLong()); info.write(bytes)
+            if (bytes.size % 2 == 1) info.write(0)
+        }
+        val list = info.toByteArray()
+        val out = java.io.BufferedOutputStream(output)
+        val riffSize = 4 + (8 + fmt!!.size + fmt!!.size % 2) + (8 + list.size) + (8 + dataSize + dataSize % 2)
+        out.write("RIFF".toByteArray(Charsets.US_ASCII)); le32(out, riffSize); out.write("WAVE".toByteArray(Charsets.US_ASCII))
+        out.write("fmt ".toByteArray(Charsets.US_ASCII)); le32(out, fmt!!.size.toLong()); out.write(fmt!!); if (fmt!!.size % 2 == 1) out.write(0)
+        out.write("LIST".toByteArray(Charsets.US_ASCII)); le32(out, list.size.toLong()); out.write(list)
+        out.write("data".toByteArray(Charsets.US_ASCII)); le32(out, dataSize)
+        f.seek(dataAt)
+        val buffer = ByteArray(256 * 1024); var left = dataSize
+        while (left > 0) { val n = f.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt()); require(n > 0) { "WAV ended early." }; out.write(buffer, 0, n); left -= n }
+        if (dataSize % 2 == 1L) out.write(0)
+        out.flush()
+    }
 }
 
 object ScriptSections {
