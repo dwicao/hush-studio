@@ -16,6 +16,8 @@ import java.io.File
 import java.util.concurrent.Executors
 import kotlin.math.*
 
+private const val PRIVACY_POLICY_URL="https://github.com/orailnoor/hush-studio/blob/main/PRIVACY.md"
+
 class MainActivity : Activity() {
     private val ui by lazy { Ui(this) }
     private val bg get() = Palette.bg
@@ -92,6 +94,7 @@ class MainActivity : Activity() {
         voiceEditor = savedInstanceState?.getBoolean("voiceEditor") ?: false
         voiceFilter = savedInstanceState?.getString("voiceFilter") ?: "All"
         exportProject = savedInstanceState?.getString("exportProject")?.let { File(store.projects,it) }
+        Reports.flush(applicationContext)
         draw()
     }
     override fun onResume() { super.onResume();chunkStudio?.resume();handler.post(tick) }
@@ -386,7 +389,7 @@ class MainActivity : Activity() {
     }
     private fun startNewVoice() {
         fun open(clear: Boolean) {
-            if(clear) { store.reference.delete();store.prefs.edit().putString("voiceName","").putString("transcript","").apply() }
+            if(clear) { store.reference.delete();store.prefs.edit().putString("voiceName","").putString("transcript","").putBoolean("cloneConsent",false).apply() }
             voiceEditor=true;voiceNotice="";scrollPositions["Voices"]=0;pageScroll?.scrollTo(0,0);draw()
         }
         val name=store.prefs.getString("voiceName","") ?: ""
@@ -506,20 +509,30 @@ class MainActivity : Activity() {
         val words=field(content,"The exact words spoken in your sample",store.prefs.getString("transcript","") ?: "",4,"transcript")
         words.filters=arrayOf(InputFilter.LengthFilter(600));words.contentDescription="Transcript of the sample"
         ui.sectionFooter(content,"Listen to the sample and fix any missed words. Exact words make the voice sound right.")
-        footerReady={ store.reference.isFile && name.text.isNotBlank() && words.text.isNotBlank() && voices.none { it.name.equals(name.text.toString().trim(),true) } }
+        ui.sectionHeader(content,"Permission")
+        val consentBox=ui.group(content).apply { setPadding(dp(12),dp(10),dp(16),dp(10)) }
+        val consent=CheckBox(this).apply {
+            text="I have permission to use this voice, and I won't use it to impersonate or mislead anyone."
+            textSize=15f;setTextColor(ink);buttonTintList=android.content.res.ColorStateList.valueOf(accent)
+            isChecked=store.prefs.getBoolean("cloneConsent",false);isEnabled=!StudioJobs.busy
+            setOnCheckedChangeListener { _,on -> store.prefs.edit().putBoolean("cloneConsent",on).apply();updateFooter() }
+        }
+        consentBox.addView(consent,LinearLayout.LayoutParams(-1,-2))
+        footerReady={ store.reference.isFile && name.text.isNotBlank() && words.text.isNotBlank() && consent.isChecked && voices.none { it.name.equals(name.text.toString().trim(),true) } }
         footerMessage={ when {
             !store.reference.isFile -> "Record or import a sample."
             name.text.isBlank() -> "Give your voice a name."
             voices.any { it.name.equals(name.text.toString().trim(),true) } -> "That name is already used."
             words.text.isBlank() -> "Extract or type the sample’s words."
+            !consent.isChecked -> "Confirm you have permission to use this voice."
             else -> "Saves “${name.text.toString().trim()}” on this phone."
         } }
         cloneVoiceAction={
             val title=name.text.toString().trim();val transcript=words.text.toString().trim()
             stopPlayback()
             startJob("Saving your voice…",true) { context ->
-                val saved=StudioStore(context).voices.save(title,transcript,StudioStore(context).reference)
-                StudioStore(context).prefs.edit().putString("selectedVoiceId",saved.id).apply()
+                val saved=StudioStore(context).voices.save(title,transcript,StudioStore(context).reference,consentAt=System.currentTimeMillis())
+                StudioStore(context).prefs.edit().putString("selectedVoiceId",saved.id).putBoolean("cloneConsent",false).apply()
                 runOnUiThread { voiceEditor=false;voiceNotice="${saved.name} is ready and selected.";scrollPositions["Voices"]=0;pageScroll?.scrollTo(0,0) }
                 StudioJobs.update("${saved.name} saved on this phone")
             }
@@ -528,11 +541,17 @@ class MainActivity : Activity() {
     private fun narrationMenu(anchor: View,dir: File) {
         val meta=store.metadata(dir)
         PopupMenu(this,anchor).apply {
-            menu.add("Rename");if(File(dir,"full.wav").isFile) menu.add("Export WAV");menu.add("Delete")
+            menu.add("Rename");if(File(dir,"full.wav").isFile) menu.add("Export WAV");menu.add("Report");menu.add("Delete")
             setOnMenuItemClickListener { item ->
                 when(item.title.toString()) {
                     "Rename" -> editName("Rename Narration",meta.getString("title"),80) { store.renameProject(dir,it);draw() }
                     "Export WAV" -> safely { export(dir) }
+                    "Report" -> safely {
+                        val sections=meta.getJSONArray("sections")
+                        val text=(0 until sections.length()).joinToString(" ") { sections.getString(it) }
+                        val voiceId=meta.optString("voiceId")
+                        ReportDialog.show(this@MainActivity,text,if(voiceId.startsWith(BuiltInVoices.PREFIX)) "built-in" else if(voiceId.isNotEmpty()) "cloned" else "model")
+                    }
                     else -> AlertDialog.Builder(this@MainActivity).setTitle("Delete “${meta.getString("title")}”?")
                         .setMessage("Its audio is removed from this phone. Export a copy first if you want to keep it. Voices are unaffected.")
                         .setNegativeButton("Cancel",null).setPositiveButton("Delete") { _,_ -> safely { store.deleteProject(dir);draw() } }.show()
@@ -654,10 +673,11 @@ class MainActivity : Activity() {
         ui.groupRow(device,"Speech Model",value="VoxCPM 0.5B · Q4")
         ui.sectionHeader(content,"Privacy")
         val privacy=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(14)) }
-        privacy.addView(ui.subhead("Samples, transcripts and narrations stay on this phone unless you export them. The internet is used only to download the speech model. Uninstalling removes your voices and narrations, so export anything you want to keep.",ink))
+        privacy.addView(ui.subhead("Samples, transcripts and narrations stay on this phone unless you export them. The internet is used to download the speech model and, only if you choose to report a narration, to send that report. Uninstalling removes your voices and narrations, so export anything you want to keep.",ink))
         ui.sectionHeader(content,"About")
         val about=ui.group(content)
         ui.groupRow(about,"Version",value=BuildConfig.VERSION_NAME)
+        ui.groupRow(about,"Privacy Policy",chevron=true) { safely { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(PRIVACY_POLICY_URL))) } }
         ui.groupRow(about,"Open-Source Licenses",chevron=true) { safely { showLicenses() } }
         ui.sectionFooter(content,"Built with OpenBMB VoxCPM, the VoxCPM.cpp runtime and Vosk offline speech recognition.")
     }
@@ -760,8 +780,9 @@ class MainActivity : Activity() {
                 io.execute {
                     try {
                         val source=File(dir,"full.wav")
-                        contentResolver.openOutputStream(uri,"wt")!!.use { output -> source.inputStream().use { it.copyTo(output) } }
-                        runOnUiThread { toast("WAV exported") }
+                        val title=runCatching { store.metadata(dir).getString("title") }.getOrDefault("Narration")
+                        contentResolver.openOutputStream(uri,"wt")!!.use { output -> AudioFiles.writeLabeled(source,output,AudioFiles.aiLabel(title)) }
+                        runOnUiThread { toast("WAV exported, labelled as AI-generated") }
                     } catch(e: Exception) { StudioJobs.reportFailure(e.message ?: "Export failed. Please try another location.");runOnUiThread { draw() } }
                 }
             }

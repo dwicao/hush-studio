@@ -21,7 +21,8 @@ class VoiceLibrary(private val root: File) {
         require(!name.isNullOrBlank() && !text.isNullOrBlank() && File(dir,"reference.wav").isFile)
         Voice(dir.name,name,text,data.getProperty("created").toLong(),File(dir,"reference.wav"))
     }.getOrNull()
-    fun save(name: String, transcript: String, reference: File): Voice = synchronized(lock) {
+    /** [consentAt] records when the user confirmed they may use this voice (shown before saving a clone). */
+    fun save(name: String, transcript: String, reference: File, consentAt: Long? = null): Voice = synchronized(lock) {
         val title=name.trim(); val words=transcript.trim()
         require(title.isNotEmpty() && title.length<=60) { "Give this voice a name, up to 60 characters." }
         require(words.isNotEmpty() && words.length<=600) { "Extract and review the reference transcript first." }
@@ -37,6 +38,7 @@ class VoiceLibrary(private val root: File) {
             val created=System.currentTimeMillis()
             Properties().apply {
                 setProperty("name",title); setProperty("transcript",words); setProperty("created",created.toString())
+                consentAt?.let { setProperty("consentAt",it.toString()) }
             }.also { data -> File(temp,"voice.properties").writer(Charsets.UTF_8).use { data.store(it,"Hush Studio saved voice") } }
             check(temp.renameTo(destination)) { "Could not save cloned voice." }
             Voice(id,title,words,created,File(destination,"reference.wav"))
