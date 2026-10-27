@@ -243,6 +243,11 @@ object StudioJobs {
         val threads = DeviceProfile.clampThreads(store.context, store.prefs.getInt("threads",profile.defaultThreads))
             .coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(8))
         AppLog.i("render", "chunk $index start model=${store.modelId} steps=$steps threads=$threads textLen=${IndonesianText.normalize(text).length} voice=$voice")
+        val refSeconds = if (voice) runCatching { AudioPeaks.durationMs(File(dir, "reference.wav")) / 1000.0 }.getOrDefault(0.0) else 0.0
+        if (voice && refSeconds > 0) AppLog.i("render", "chunk $index reference=${"%.1f".format(refSeconds)}s")
+        if (store.modelId == StudioStore.MODEL_ID_VOXCPM2 && refSeconds > 10) {
+            AppLog.w("render", "VoxCPM2 dengan referensi ${"%.0f".format(refSeconds)}s: prefill jauh lebih lambat. Klip 3–5 detik jauh lebih cepat.")
+        }
         val key=cache.key(IndonesianText.normalize(text),transcript,reference,"${store.modelId}:${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${NativeCpuEngine.fast}:$steps:$threads")
         if(reuse && cache.restore(key,temp)) {
             check(temp.renameTo(File(dir,"section-$index.wav")))

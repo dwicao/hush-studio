@@ -296,10 +296,15 @@ class MainActivity : Activity() {
         val s=StudioJobs.generation.snapshot()
         val native=StudioJobs.nativeActive
         val stall=StudioJobs.stallInfo()
-        val summary = if(s.total>0) {
+        // Ticking stage time proves the app is alive even when native gives no callbacks.
+        val stageName=s.stage.ifEmpty { "Starting" }
+        var summary = if(s.total>0) {
             val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)} s of audio" else ""
-            val stallNote=if(stall!=null) " · tanpa update native $stall (tahap '${s.stage.ifBlank { "?" }}' ${GenerationProgress.Snapshot.duration(s.stageElapsedMs)}) — masih jalan atau macet" else ""
-            "${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech$stallNote · ${s.completed} of ${s.total} chunks done"
+            val stallNote=if(stall!=null) " · tanpa update native $stall (tahap '$stageName' ${s.stageElapsed}) — masih jalan atau macet" else ""
+            var expect=""
+            if(s.stage=="Preparing speech" && store.modelId==StudioStore.MODEL_ID_VOXCPM2)
+                expect=" · prefill 2B: normal 2–5 mnt dg voice clone"
+            "$stageName · ${s.stageElapsed} (total ${s.elapsed})$speech$stallNote$expect · ${s.completed} of ${s.total} chunks done"
         } else if (stall!=null) "Tanpa update native $stall — masih jalan atau macet, Stop tetap bisa dipakai" else ""
         timingText?.visibility=if(summary.isEmpty()) View.GONE else View.VISIBLE
         if(timingText?.text?.toString()!=summary) timingText?.text=summary

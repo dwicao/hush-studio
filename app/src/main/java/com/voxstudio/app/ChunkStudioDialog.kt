@@ -148,7 +148,10 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
             val active=StudioJobs.activeChunk
             progressTitle.assign(if(active>=0) "Generating chunk ${active+1}${if(s.total>1) " · ${(s.completed+1).coerceAtMost(s.total)} of ${s.total}" else ""}" else StudioJobs.status.lineSequence().first())
             val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)}s of audio so far" else ""
-            progressDetail.assign("${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech")
+            var expect=""
+            if(s.stage=="Preparing speech" && store.modelId==StudioStore.MODEL_ID_VOXCPM2)
+                expect=" · prefill 2B: normal 2–5 mnt dg voice clone"
+            progressDetail.assign("${s.stage.ifEmpty { "Starting" }} · ${s.stageElapsed} (total ${s.elapsed})$speech$expect")
             // Milestones only: chunks done plus the current chunk's stage. Never presented as time remaining.
             generationProgress.progress=if(s.total>0) ((s.completed+(s.stageNumber-1).coerceAtLeast(0)/5f)*1000/s.total).toInt() else 0
             stop.isEnabled=!StudioJobs.stop;stop.assign(if(StudioJobs.stop) "Stopping…" else "Stop after this step")
