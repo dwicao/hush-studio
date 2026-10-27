@@ -21,7 +21,7 @@ class StudioStore(val context: Context) {
     val reference get() = File(context.filesDir, "voice/reference.wav")
     val projects get() = File(context.filesDir, "projects").also { it.mkdirs() }
     val ready get() = prefs.getBoolean("modelVerified", false) && when (modelId) {
-        Companion.MODEL_ID_VOXCPM2 -> model.isFile && Companion.looksLikeGguf(model, 500_000_000L)
+        Companion.MODEL_ID_VOXCPM2 -> model.isFile && model.length() == Companion.MODEL2_BYTES
         else -> model.isFile && model.length() == MODEL_BYTES
     }
     fun history(): List<File> = projects.listFiles()?.filter { File(it,"project.json").isFile && (File(it,"full.wav").isFile || runCatching { metadata(it).optBoolean("studio") }.getOrDefault(false)) }?.sortedByDescending { runCatching { metadata(it).optLong("created",it.lastModified()) }.getOrDefault(it.lastModified()) } ?: emptyList()
@@ -48,13 +48,15 @@ class StudioStore(val context: Context) {
         const val MODEL_URL = "https://huggingface.co/bluryar/VoxCPM-GGUF/resolve/7a16c13bad65c5505e38df153d69e02f96eb3960/voxcpm-0.5b-q4_k.gguf?download=true"
         const val MODEL_ID_05B = "voxcpm-0.5b"
         const val MODEL_ID_VOXCPM2 = "voxcpm2"
-        /** VoxCPM2 (2B, 30 languages incl. Indonesian, 48 kHz) is runtime-preliminary:
-         * no pinned GGUF is bundled yet. Export via vendor/scripts/export_quantized_weights.sh
-         * from openbmb/VoxCPM2, then import the file in Settings. Once a quantized GGUF is
-         * pinned, fill MODEL2_* and the app will offer one-tap download. */
-        const val MODEL2_BYTES = -1L
-        const val MODEL2_SHA = ""
-        const val MODEL2_URL = ""
+        /** VoxCPM2 full single-file export (2B, 30 languages incl. Indonesian, 48 kHz).
+         * Pinned 2026-10-27: the +AudioVAE-F16 variant decodes faster on phone CPUs.
+         * Plain Q4_K alternative (1517531200 bytes, SHA
+         * 2cadf3a26b32085366407c1bf8434268d33e78af094dc1fd0b1c25576eb4f15b) is not
+         * offered in-app. Split/component files (BaseLM-only, Acoustic-only, e.g.
+         * DennisHuang648/VoxCPM2-GGUF) are refused by the GGUF probe at import. */
+        const val MODEL2_BYTES = 1592332544L
+        const val MODEL2_SHA = "6ab8d1bf70a71cfe846a62aec7c56540655151481676cd571b59914c0c39776b"
+        const val MODEL2_URL = "https://huggingface.co/bluryar/VoxCPM-GGUF/resolve/main/voxcpm2-q4_k-audiovae-f16.gguf?download=true"
         fun modelFile(context: Context, id: String): File = File(context.filesDir,
             if (id == MODEL_ID_VOXCPM2) "model/voxcpm2-q4_k.gguf" else "model/voxcpm-0.5b-q4_k.gguf")
         fun selectedModelId(context: Context): String =
@@ -69,14 +71,20 @@ class StudioStore(val context: Context) {
                 }
             }.getOrDefault(false)
         }
+        fun verifySha(file: File, sha: String): Boolean {
+            if (!file.isFile) return false
+            return runCatching {
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().buffered().use { stream ->
+                    val bytes = ByteArray(256 * 1024)
+                    while (true) { val n = stream.read(bytes); if (n < 0) break; digest.update(bytes, 0, n) }
+                }
+                digest.digest().joinToString("") { "%02x".format(it) } == sha
+            }.getOrDefault(false)
+        }
         fun verify(file: File): Boolean {
             if (file.length() != MODEL_BYTES) return false
-            val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().buffered().use { stream ->
-                val bytes = ByteArray(256 * 1024)
-                while (true) { val n = stream.read(bytes); if (n < 0) break; digest.update(bytes,0,n) }
-            }
-            return digest.digest().joinToString("") { "%02x".format(it) } == MODEL_SHA
+            return verifySha(file, MODEL_SHA)
         }
     }
 }

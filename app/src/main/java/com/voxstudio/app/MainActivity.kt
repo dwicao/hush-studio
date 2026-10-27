@@ -321,7 +321,7 @@ class MainActivity : Activity() {
             ui.gap(content,8)
             val setup=ui.group(content).apply { setPadding(dp(16),dp(16),dp(16),dp(16)) }
             setup.addView(ui.headline("Set Up Offline Speech"));ui.gap(setup,4)
-            setup.addView(ui.subhead("Download the speech model once, about 500 MB. After that, everything runs on this phone."));ui.gap(setup,14)
+            setup.addView(ui.subhead("Download the speech model once (0.5B: 500 MB, VoxCPM2: 1.6 GB). After that, everything runs on this phone."));ui.gap(setup,14)
             setup.addView(ui.button("Set Up","primary") { navigate("Settings") },LinearLayout.LayoutParams(-1,-2))
         }
         store.prefs.getString("studioProjectId",null)?.let { id ->
@@ -618,8 +618,8 @@ class MainActivity : Activity() {
             .setItems(arrayOf("Import Model File","Download Again")) { _,which ->
                 if(which==0) safely { chooseFile(42,"*/*") }
                 else AlertDialog.Builder(this).setTitle("Download Again?")
-                    .setMessage("This uses about 500 MB of data. Your voices and narrations stay on this phone.")
-                    .setNegativeButton("Cancel",null).setPositiveButton("Download") { _,_ -> safely { startJob("Connecting to model host…",true) { StudioJobs.download(it) } } }.show()
+                    .setMessage(if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) "Ini mengunduh ulang sekitar 1.6 GB data. Voice dan narasi tetap aman di HP." else "This uses about 500 MB of data. Your voices and narrations stay on this phone.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Download") { _,_ -> safely { startJob(if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) "Menghubungi host model…" else "Connecting to model host…",true) { StudioJobs.download(it) } } }.show()
             }.setNegativeButton("Close",null).show()
     }
     private fun showLicenses() {
@@ -643,10 +643,13 @@ class MainActivity : Activity() {
                 }.setNegativeButton("Batal",null).show()
         }
         if(store.ready) ui.groupRow(model,"Manage Model Files",chevron=true) { manageSpeechModel() }
+        else if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) {
+            ui.groupRow(model,"Download Model","About 1.6 GB · needs 2 GB free",titleColor=accent) { safely { startJob("Menghubungi host model…",true) { StudioJobs.download(it) } } }
+            ui.groupRow(model,"Import Model File","voxcpm2-q4_k-audiovae-f16.gguf",titleColor=accent) { safely { chooseFile(42,"*/*") } }
+        }
         else {
             ui.groupRow(model,"Download Model","About 500 MB · needs 650 MB free",titleColor=accent) { safely { startJob("Connecting to model host…",true) { StudioJobs.download(it) } } }
             ui.groupRow(model,"Import Model File",titleColor=accent) { safely { chooseFile(42,"*/*") } }
-            if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) ui.groupRow(model,"Import VoxCPM2 GGUF","Ekspor dari openbmb/VoxCPM2 lalu impor",titleColor=accent) { safely { chooseFile(42,"*/*") } }
         }
         if(store.model.isFile) ui.groupRow(model,"Periksa Model","Diagnosa isi file GGUF",chevron=true) { safely {
             val r = GgufProbe.probe(store.model)
@@ -797,6 +800,8 @@ class MainActivity : Activity() {
                         require(s.model.parentFile!!.usableSpace>3L*1024*1024*1024) { "Siapkan minimal 3 GB untuk model VoxCPM2." }
                         copyBounded(context,uri,temp,6L*1024*1024*1024)
                         StudioJobs.checkStop(); require(StudioStore.looksLikeGguf(temp,500_000_000L)) { "Pilih file GGUF VoxCPM2 yang valid (ekspor dari openbmb/VoxCPM2)." }
+                        StudioJobs.update("Memverifikasi model VoxCPM2…")
+                        require(StudioStore.verifySha(temp, StudioStore.MODEL2_SHA)) { "File ini bukan voxcpm2-q4_k-audiovae-f16.gguf resmi (SHA tidak cocok). Unduh dari link di Settings > Speech Model." }
                         val probe = GgufProbe.probe(temp)
                         require(probe.error == null) { "File GGUF tidak terbaca: ${probe.error}." }
                         require(probe.isFull) { "File ini tidak lengkap untuk dipakai langsung (kurang: ${probe.missing.joinToString(", ")}). File BaseLM saja tidak cukup — pakai satu file GGUF VoxCPM2 penuh hasil ekspor resmi." }

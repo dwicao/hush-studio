@@ -296,6 +296,15 @@ Adding or replacing a built-in voice:
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
 assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
 
+0.1.20 — PINNED VOXCPM2 MODEL (one-tap Indonesian download)
+- Pinned bluryar/VoxCPM-GGUF voxcpm2-q4_k-audiovae-f16.gguf (1592332544 bytes, SHA-256
+  6ab8d1bf…39776b): Settings > Speech Model downloads it directly with progress +
+  SHA + GGUF-probe verification. Split/component files (e.g. DennisHuang648 BaseLM-only)
+  are still refused at import with the exact missing-parts message.
+- Plain voxcpm2-q4_k.gguf alternative noted in code; +AudioVAE-F16 variant chosen for
+  faster CPU decode.
+- Version bumped to 0.1.20 (code 21).
+
 0.1.19 — GGUF DIAGNOSTICS (fix misleading "damaged" error)
 - DennisHuang648/VoxCPM2-GGUF ships SPLIT files (BaseLM + Acoustic); importing only
   VoxCPM2-BaseLM-Q8_0.gguf made the native init fail, and the app wrongly reported

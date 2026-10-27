@@ -21,13 +21,13 @@ It is built for long-form narration such as video voiceovers, audiobook drafts a
 | Android | 9 or later (API 28+) |
 | CPU | 64-bit ARM (arm64-v8a). Phones with ARMv8.2 dot-product and FP16 support (most from 2019 onward) use a faster engine; older 64-bit phones run a compatible engine automatically. |
 | Memory | 4 GB RAM minimum; 6 GB recommended. Generation peaks at about 1.7 GB. |
-| Storage | About 650 MB free for the speech model, plus space for projects |
+| Storage | About 650 MB free for the 0.5B speech model (2 GB for VoxCPM2), plus space for projects |
 | Network | Needed once, to download the 500 MB speech model |
 
 ## Installation
 
 1. Download the latest APK from the [Releases](../../releases) page and install it. Android will ask you to allow installs from your browser or file manager.
-2. Open the app and go to **Settings > Speech Model** to download the model, or import the `voxcpm-0.5b-q4_k.gguf` file if you already have it. The file is checked against a fixed SHA-256 hash before use.
+2. Open the app and go to **Settings > Speech Model** to download the model, or import the `voxcpm-0.5b-q4_k.gguf` file if you already have it. The file is checked against a fixed SHA-256 hash before use. For Indonesian, switch the model to **VoxCPM2** in Settings and download `voxcpm2-q4_k-audiovae-f16.gguf` (1.6 GB, 30 languages incl. Indonesian, 48 kHz) — or import it from `bluryar/VoxCPM-GGUF`.
 3. Write or paste a script in **Create**, choose a voice and tap **Generate**.
 
 ## Performance

@@ -70,11 +70,7 @@ object StudioJobs {
     fun checkStop() { if (stop) throw CancellationException() }
     fun download(context: Context) {
         val store = StudioStore(context); store.model.parentFile!!.mkdirs()
-        if (store.modelId == StudioStore.MODEL_ID_VOXCPM2) {
-            // No pinned VoxCPM2 download yet: user exports GGUF from openbmb/VoxCPM2
-            // (vendor/scripts/export_quantized_weights.sh) and imports it in Settings.
-            throw IllegalStateException("Unduhan VoxCPM2 belum tersedia. Ekspor GGUF dari openbmb/VoxCPM2 lalu gunakan Impor File Model.")
-        }
+        if (store.modelId == StudioStore.MODEL_ID_VOXCPM2) return downloadVoxCPM2(context, store)
         require(store.model.parentFile!!.usableSpace > StudioStore.MODEL_BYTES + 150_000_000) { "Free at least 650 MB of storage first." }
         val temp = File(store.model.parentFile,"download.part")
         val connection = URL(StudioStore.MODEL_URL).openConnection() as HttpURLConnection
@@ -96,6 +92,32 @@ object StudioJobs {
             checkStop(); check(temp.renameTo(store.model)) { "Could not install model." }
             store.prefs.edit().putBoolean("modelVerified",true).apply()
             update("Model installed · ready for offline generation")
+        } finally { connection.disconnect(); temp.delete() }
+    }
+    private fun downloadVoxCPM2(context: Context, store: StudioStore) {
+        require(store.model.parentFile!!.usableSpace > StudioStore.MODEL2_BYTES + 150_000_000) { "Siapkan minimal 2 GB ruang kosong dulu." }
+        val temp = File(store.model.parentFile,"download.part")
+        val connection = URL(StudioStore.MODEL2_URL).openConnection() as HttpURLConnection
+        connection.connectTimeout = 30000; connection.readTimeout = 30000
+        try {
+            require(connection.responseCode == 200) { "Unduhan gagal (HTTP ${connection.responseCode}). Coba impor file model." }
+            connection.inputStream.buffered().use { input -> temp.outputStream().buffered().use { output ->
+                val buffer = ByteArray(256 * 1024); var total = 0L; var previous = -1
+                while (true) {
+                    checkStop(); val n = input.read(buffer); if (n < 0) break
+                    total += n; require(total <= StudioStore.MODEL2_BYTES) { "Ukuran unduhan model tidak sesuai." }
+                    output.write(buffer,0,n)
+                    val pc = (total * 100 / StudioStore.MODEL2_BYTES).toInt()
+                    if (pc != previous) { update("Mengunduh model VoxCPM2 · $pc%",pc); previous = pc }
+                }
+            } }
+            update("Memverifikasi model VoxCPM2…"); checkStop()
+            require(StudioStore.verifySha(temp, StudioStore.MODEL2_SHA)) { "Verifikasi model gagal. Ulangi unduhan." }
+            val probe = GgufProbe.probe(temp)
+            require(probe.isFull) { "File model tidak lengkap (kurang: ${probe.missing.joinToString(", ")})." }
+            checkStop(); check(temp.renameTo(store.model)) { "Tidak bisa memasang model." }
+            store.prefs.edit().putBoolean("modelVerified",true).apply()
+            update("Model VoxCPM2 terpasang · siap untuk Bahasa Indonesia")
         } finally { connection.disconnect(); temp.delete() }
     }
     fun generate(context: Context, script: String, title: String, voiceId: String?, steps: Int) {
