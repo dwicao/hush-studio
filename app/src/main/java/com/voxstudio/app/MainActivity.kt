@@ -648,6 +648,15 @@ class MainActivity : Activity() {
             ui.groupRow(model,"Import Model File",titleColor=accent) { safely { chooseFile(42,"*/*") } }
             if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) ui.groupRow(model,"Import VoxCPM2 GGUF","Ekspor dari openbmb/VoxCPM2 lalu impor",titleColor=accent) { safely { chooseFile(42,"*/*") } }
         }
+        if(store.model.isFile) ui.groupRow(model,"Periksa Model","Diagnosa isi file GGUF",chevron=true) { safely {
+            val r = GgufProbe.probe(store.model)
+            val size = "${store.model.length()/1048576} MB"
+            val detail = if(r.error != null) "Hasil: tidak terbaca (${r.error})."
+                else "Arsitektur: ${r.architecture.ifBlank { "-" }}\nTensor: ${r.tensorCount} (dipindai ${r.tensorsScanned})\n" +
+                "Tokenizer: ${if(r.hasTokenizer) "ada" else "hilang"}\nAudioVAE: ${if(r.hasAudioVae) "ada" else "hilang"}\n" +
+                "Difusi/LM: ${if(r.hasDit || r.hasLm) "ada" else "hilang"}\nHasil: ${if(r.isFull) "model penuh, siap dipakai" else "TIDAK lengkap (kurang: ${r.missing.joinToString(", ")})"}."
+            AlertDialog.Builder(this).setTitle("Diagnosa Model ($size)").setMessage(detail).setPositiveButton("Tutup",null).show()
+        } }
         ui.sectionFooter(content,"Voice cloning, transcription and narration run entirely on this phone.")
         ui.sectionHeader(content,"Defaults")
         ui.groupRow(ui.group(content),"Quality",value=qualityName(store.prefs.getInt("steps",6)),chevron=true) { chooseQuality { draw() } }
@@ -782,10 +791,15 @@ class MainActivity : Activity() {
                 val s=StudioStore(context); s.model.parentFile!!.mkdirs(); val temp=File(s.model.parentFile,"import.part")
                 try {
                     if(s.modelId==StudioStore.MODEL_ID_VOXCPM2) {
-                        // Beta path: accept any GGUF (export from openbmb/VoxCPM2), verified by magic + size.
+                        // Beta path: accept a full single-file VoxCPM2 GGUF, verified by magic + size
+                        // plus a header probe. Split/component files (BaseLM-only, Acoustic-only)
+                        // cannot be initialized by the runtime, so refuse them at import time.
                         require(s.model.parentFile!!.usableSpace>3L*1024*1024*1024) { "Siapkan minimal 3 GB untuk model VoxCPM2." }
                         copyBounded(context,uri,temp,6L*1024*1024*1024)
                         StudioJobs.checkStop(); require(StudioStore.looksLikeGguf(temp,500_000_000L)) { "Pilih file GGUF VoxCPM2 yang valid (ekspor dari openbmb/VoxCPM2)." }
+                        val probe = GgufProbe.probe(temp)
+                        require(probe.error == null) { "File GGUF tidak terbaca: ${probe.error}." }
+                        require(probe.isFull) { "File ini tidak lengkap untuk dipakai langsung (kurang: ${probe.missing.joinToString(", ")}). File BaseLM saja tidak cukup — pakai satu file GGUF VoxCPM2 penuh hasil ekspor resmi." }
                         check(temp.renameTo(s.model)); s.prefs.edit().putBoolean("modelVerified",true).apply(); StudioJobs.update("Model VoxCPM2 terpasang · siap untuk Bahasa Indonesia")
                     } else {
                         require(s.model.parentFile!!.usableSpace>StudioStore.MODEL_BYTES+100_000_000) { "Free at least 650 MB of storage first." }

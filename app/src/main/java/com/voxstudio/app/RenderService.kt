@@ -205,6 +205,12 @@ object StudioJobs {
         val modelReused=NativeEngine.lastRunReusedModel
         checkStop()
         if(error.contains("Failed to load GGUF") || error.contains("Failed to initialize")) {
+            if(store.modelId == StudioStore.MODEL_ID_VOXCPM2) {
+                // The 0.5B length+SHA check does not apply here; probe the file and
+                // report what is actually wrong instead of crying "damaged".
+                val detail = GgufProbe.diagnose(store.model)
+                throw IllegalStateException("Model VoxCPM2 tidak bisa dipakai. $detail Error asli: ${error.take(200)}")
+            }
             // A model that verified at install can still be damaged later; re-check before blaming the script.
             if(!StudioStore.verify(store.model)) {
                 store.prefs.edit().putBoolean("modelVerified",false).apply()

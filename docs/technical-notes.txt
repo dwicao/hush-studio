@@ -296,6 +296,17 @@ Adding or replacing a built-in voice:
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
 assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
 
+0.1.19 — GGUF DIAGNOSTICS (fix misleading "damaged" error)
+- DennisHuang648/VoxCPM2-GGUF ships SPLIT files (BaseLM + Acoustic); importing only
+  VoxCPM2-BaseLM-Q8_0.gguf made the native init fail, and the app wrongly reported
+  "model damaged" (the 0.5B length+SHA check can never pass for VoxCPM2).
+- New GgufProbe reads only the GGUF header (magic, metadata keys, tensor names):
+  import of a partial VoxCPM2 file is now refused with an exact missing-parts message,
+  and a failed generation reports the probe diagnosis plus the native error tail.
+- Settings > Periksa Model shows a self-service diagnosis (architecture, tensor count,
+  tokenizer/AudioVAE/diffusion presence). GgufProbeTest covers full/partial/invalid.
+- Version bumped to 0.1.19 (code 20).
+
 0.1.18 — CI + TESTKEY RELEASE
 - GitHub Actions (.github/workflows/build.yml): unit tests on push/PR, signed debug +
   release APKs on main, pre-release upload on v* tags.
