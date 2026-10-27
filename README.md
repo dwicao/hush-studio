@@ -85,9 +85,9 @@ docs/                Technical notes, verification log and GPU experiments
 
 ## Limitations
 
-- English only.
-- Output is 16 kHz mono. Write numbers and abbreviations out as words for the most reliable pronunciation.
-- Generation is not real time on mid-range phones.
+- Default model (VoxCPM 0.5B) officially supports Chinese/English only; Indonesian scripts are normalized to words but still sound accented. For native Indonesian quality, import a VoxCPM2 GGUF (30 languages incl. Indonesian, 48 kHz output) via Settings > Speech Model after exporting it from `openbmb/VoxCPM2`. VoxCPM2 runtime support is preliminary (see `vendor/voxcpm/README.md`).
+- Output is 16 kHz mono (0.5B) or 48 kHz mono (VoxCPM2). Numbers/abbreviations in Indonesian (Rp, %, jam, ke-) are auto-expanded to words before synthesis.
+- Generation is not real time on mid-range phones. On Snapdragon 8 Gen 2 / 12 GB (Galaxy Z Fold 5) the app defaults to 6 threads, 128 MB reuse cache and 5 min warm model keep-alive; 6 GB phones stay at 2 threads / 32 MB / 90 s.
 - Results vary between takes. Regenerate a chunk if a sentence comes out wrong.
 
 ## Credits

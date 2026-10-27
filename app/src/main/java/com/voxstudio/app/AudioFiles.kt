@@ -81,24 +81,27 @@ object AudioFiles {
         write(output, mono)
     }
     fun join(inputs: List<File>, output: File) {
-        require(inputs.isNotEmpty()) { "No completed sections." }
+        require(inputs.isNotEmpty()) { "Belum ada bagian yang selesai." }
         // Stream the joined file; a long script never needs all audio in memory.
+        // Sample rate follows the model output (0.5B = 16 kHz, VoxCPM2 = 48 kHz).
         RandomAccessFile(output, "rw").use { dest ->
             dest.setLength(0); dest.write(ByteArray(44))
-            var frames = 0L
+            var frames = 0L; var rate = 0
             inputs.forEachIndexed { index, file ->
                 val wave = read(file)
-                require(wave.rate == 16000 && wave.channels == 1) { "Unexpected model output format." }
-                if (index > 0) { dest.write(ByteArray(8000)); frames += 4000 }
+                require(wave.channels == 1 && wave.rate in 8000..96000) { "Format audio model tidak dikenal." }
+                if (rate == 0) rate = wave.rate
+                require(wave.rate == rate) { "Semua bagian harus memakai model yang sama." }
+                if (index > 0) { val gap = rate / 4; dest.write(ByteArray(gap * 2)); frames += gap }
                 dest.write(pcmBytes(wave.samples))
                 frames += wave.samples.size
             }
-            require(frames * 2 < Int.MAX_VALUE - 36) { "Project is too long for WAV export." }
+            require(rate > 0 && frames * 2 < Int.MAX_VALUE - 36) { "Proyek terlalu panjang untuk ekspor WAV." }
             dest.seek(0)
             fun u16(n: Int) { dest.write(n and 255); dest.write((n ushr 8) and 255) }
             fun u32(n: Int) { u16(n); u16(n ushr 16) }
             dest.writeBytes("RIFF"); u32((frames * 2 + 36).toInt()); dest.writeBytes("WAVEfmt ")
-            u32(16); u16(1); u16(1); u32(16000); u32(32000); u16(2); u16(16)
+            u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
             dest.writeBytes("data"); u32((frames * 2).toInt())
         }
     }
@@ -151,13 +154,22 @@ object AudioFiles {
 }
 
 object ScriptSections {
+    /**
+     * Indonesian-aware splitter: protects local abbreviations (Jl., No., …),
+     * thousand separators (1.000), times (07.30) and ellipsis before breaking
+     * on sentence punctuation. Falls back to the legacy pattern when the
+     * protector yields nothing (never returns empty for valid input).
+     */
     fun split(text: String, limit: Int = 220): List<String> {
         require(limit >= 32)
         val clean = text.trim().replace(Regex("[\\t ]+"), " ")
-        require(clean.isNotBlank()) { "Write a script first." }
-        require(clean.length <= 6000) { "Keep each project under 6,000 characters." }
+        require(clean.isNotBlank()) { "Tulis naskah dulu." }
+        require(clean.length <= 6000) { "Simpan tiap proyek di bawah 6.000 karakter." }
         val result = mutableListOf<String>()
-        clean.split(Regex("(?<=[.!?])\\s+|\\n+")).filter { it.isNotBlank() }.forEach { sentence ->
+        val sentences = IndonesianText.splitSentences(clean).ifEmpty {
+            clean.split(Regex("(?<=[.!?])\\s+|\\n+")).filter { it.isNotBlank() }
+        }
+        sentences.forEach { sentence ->
             var remaining = sentence.trim()
             while (remaining.length > limit) {
                 val space = remaining.lastIndexOf(' ', limit).takeIf { it >= limit / 2 } ?: limit

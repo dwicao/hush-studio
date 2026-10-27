@@ -295,3 +295,40 @@ Adding or replacing a built-in voice:
   adb shell am instrument -w -e class com.voxstudio.app.VoiceQualificationTest \
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
 assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
+
+0.1.18 — CI + TESTKEY RELEASE
+- GitHub Actions (.github/workflows/build.yml): unit tests on push/PR, signed debug +
+  release APKs on main, pre-release upload on v* tags.
+- GitHub release APKs are signed with the public AOSP testkey
+  (scripts/make-testkey-keystore.sh, testkey.jks + keystore.properties stay gitignored
+  and are generated fresh in CI). Marked pre-release: they cannot update Play-signed
+  installs. Play keeps its dedicated key (docs/play-console.md).
+- Version bumped to 0.1.18 (code 19) for this Indonesian-optimization release.
+
+0.1.17 — INDONESIAN + HIGH-RAM TUNING (Z Fold 5 / SD 8 Gen 2 / 12 GB)
+- Indonesian text: new IndonesianText (number/ordinal/time/currency/percent/degree
+  normalization, ID-aware sentence splitter protecting Jl./No./1.000/07.30/ellipsis).
+  ScriptSections/ChunkProjects use it; narration input is normalized before synthesis.
+  Unit tests: IndonesianTextTest (numbers, normalize, splitter, legacy English fixtures).
+- Device profile: DeviceProfile (highRam at >= 8 GB) drives default threads
+  (6 on 12 GB incl. SD 8 Gen 2, else 2/4 as before), thread options 2/4/6/8 clamped
+  to cores, 128 MB reuse cache + 5 min warm keep-alive on high-RAM (32 MB / 90 s
+  otherwise), adaptive low-memory admission. NPU note: Hexagon has no GGML backend,
+  so the CPU fast engine (now +i8mm) remains the path; threads/cache/keep-alive are
+  the tuned knobs. Settings shows model/cache/idle per phone.
+- Multi-model plumbing for VoxCPM2 (30 languages incl. Indonesian, 48 kHz):
+  model selector in Settings, per-model file/verified flags, generic GGUF import
+  check for VoxCPM2 (magic + size) while the pinned 0.5B keeps strict SHA/size.
+  Audio join/cache/render are sample-rate agnostic (16/44.1/48 kHz); reference stays
+  16 kHz mono (encoder input). VoxCPM2 GGUF is NOT pinned yet (no quantized file in
+  bluryar/VoxCPM-GGUF at the time of writing): export from openbmb/VoxCPM2 via
+  vendor/scripts/export_quantized_weights.sh, then import in Settings. Runtime
+  VoxCPM2 quality/parity is still preliminary upstream; keep 0.5B default until a
+  pinned file + on-phone benchmark pass.
+- ASR: SpeechTranscriber supports en/id selection with per-language asset + SHA;
+  Indonesian model not pinned (no official small-id Vosk), so ID falls back to
+  manual transcript with a clear message. All ASR user strings now Indonesian.
+- Built-in voices: accent "ID" -> "Indonesia" supported; catalog stays at the 6
+  licensed English voices (release gate + tests unchanged). Add ID clips per the
+  rights/audio/transcript/qualification rules above when licensed audio is ready.
+- UI: Create hint, model picker, threads, device rows and key errors in Indonesian.

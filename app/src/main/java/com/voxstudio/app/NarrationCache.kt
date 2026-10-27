@@ -4,7 +4,7 @@ import java.io.File
 import java.security.MessageDigest
 
 /** Bounded app-private cache; generated audio is reusable only for identical inputs. */
-class NarrationCache(private val directory: File) {
+class NarrationCache(private val directory: File, private val maxBytes: Long = 32L * 1024 * 1024) {
     fun key(text: String, transcript: String, reference: File?, settings: String): String {
         val digest=MessageDigest.getInstance("SHA-256")
         for(value in listOf(text,transcript,settings)) {
@@ -17,7 +17,7 @@ class NarrationCache(private val directory: File) {
     fun restore(key: String, destination: File): Boolean {
         val source=File(directory,"$key.wav")
         if(!source.isFile)return false
-        return runCatching { val wave=AudioFiles.read(source);require(wave.rate==16000 && wave.channels==1 && wave.samples.isNotEmpty());source.copyTo(destination,true);source.setLastModified(System.currentTimeMillis());true }.getOrElse { source.delete();false }
+        return runCatching { val wave=AudioFiles.read(source);require(wave.rate in 8000..96000 && wave.channels==1 && wave.samples.isNotEmpty());source.copyTo(destination,true);source.setLastModified(System.currentTimeMillis());true }.getOrElse { source.delete();false }
     }
     fun save(key: String, source: File) {
         runCatching {
@@ -26,7 +26,7 @@ class NarrationCache(private val directory: File) {
             source.copyTo(temp,true)
             check(temp.renameTo(File(directory,"$key.wav")))
             var total=0L
-            directory.listFiles()?.filter { it.extension=="wav" }?.sortedByDescending { it.lastModified() }?.forEach { total+=it.length();if(total>32L*1024*1024)it.delete() }
+            directory.listFiles()?.filter { it.extension=="wav" }?.sortedByDescending { it.lastModified() }?.forEach { total+=it.length();if(total>maxBytes)it.delete() }
         }
     }
 }

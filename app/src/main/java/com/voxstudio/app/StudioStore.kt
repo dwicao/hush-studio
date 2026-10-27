@@ -9,7 +9,10 @@ import java.security.MessageDigest
 class StudioStore(val context: Context) {
     init { NativeEngine.appContext=context.applicationContext }
     val prefs = context.getSharedPreferences("studio", Context.MODE_PRIVATE)
-    val model get() = File(context.filesDir, "model/voxcpm-0.5b-q4_k.gguf")
+    val model get() = Companion.modelFile(context, Companion.selectedModelId(context))
+    val modelId get() = Companion.selectedModelId(context)
+    /** Expected output rate: 0.5B = 16 kHz, VoxCPM2 = 48 kHz. Projects record their rate. */
+    val expectedRate get() = if (modelId == Companion.MODEL_ID_VOXCPM2) 48000 else 16000
     val voices get() = VoiceLibrary(File(context.filesDir,"voices"))
     /** Built-in voices and cloned voices share one id space; built-in ids start with "builtin-". */
     fun findVoice(id: String?): VoiceLibrary.Voice? = if(id?.startsWith(BuiltInVoices.PREFIX)==true) BuiltInVoices.voice(context,id) else voices.find(id)
@@ -17,7 +20,10 @@ class StudioStore(val context: Context) {
     val selectedVoice get() = findVoice(prefs.getString("selectedVoiceId",null)?.takeIf { it.isNotEmpty() }) ?: BuiltInVoices.default(context)
     val reference get() = File(context.filesDir, "voice/reference.wav")
     val projects get() = File(context.filesDir, "projects").also { it.mkdirs() }
-    val ready get() = model.isFile && model.length() == MODEL_BYTES && prefs.getBoolean("modelVerified", false)
+    val ready get() = prefs.getBoolean("modelVerified", false) && when (modelId) {
+        Companion.MODEL_ID_VOXCPM2 -> model.isFile && Companion.looksLikeGguf(model, 500_000_000L)
+        else -> model.isFile && model.length() == MODEL_BYTES
+    }
     fun history(): List<File> = projects.listFiles()?.filter { File(it,"project.json").isFile && (File(it,"full.wav").isFile || runCatching { metadata(it).optBoolean("studio") }.getOrDefault(false)) }?.sortedByDescending { runCatching { metadata(it).optLong("created",it.lastModified()) }.getOrDefault(it.lastModified()) } ?: emptyList()
     fun metadata(dir: File) = JSONObject(File(dir,"project.json").readText())
     fun saveMetadata(dir: File, data: JSONObject) {
@@ -40,6 +46,29 @@ class StudioStore(val context: Context) {
         const val MODEL_BYTES = 499832224L
         const val MODEL_SHA = "32fa909cc3c127bfa1003b0863f7b7587bb44e3ae26c6c1cbf224f58d70a9fb3"
         const val MODEL_URL = "https://huggingface.co/bluryar/VoxCPM-GGUF/resolve/7a16c13bad65c5505e38df153d69e02f96eb3960/voxcpm-0.5b-q4_k.gguf?download=true"
+        const val MODEL_ID_05B = "voxcpm-0.5b"
+        const val MODEL_ID_VOXCPM2 = "voxcpm2"
+        /** VoxCPM2 (2B, 30 languages incl. Indonesian, 48 kHz) is runtime-preliminary:
+         * no pinned GGUF is bundled yet. Export via vendor/scripts/export_quantized_weights.sh
+         * from openbmb/VoxCPM2, then import the file in Settings. Once a quantized GGUF is
+         * pinned, fill MODEL2_* and the app will offer one-tap download. */
+        const val MODEL2_BYTES = -1L
+        const val MODEL2_SHA = ""
+        const val MODEL2_URL = ""
+        fun modelFile(context: Context, id: String): File = File(context.filesDir,
+            if (id == MODEL_ID_VOXCPM2) "model/voxcpm2-q4_k.gguf" else "model/voxcpm-0.5b-q4_k.gguf")
+        fun selectedModelId(context: Context): String =
+            context.getSharedPreferences("studio", Context.MODE_PRIVATE).getString("modelId", MODEL_ID_05B) ?: MODEL_ID_05B
+        /** Generic GGUF sanity: magic + size. Strict SHA applies only to the pinned 0.5B. */
+        fun looksLikeGguf(file: File, minBytes: Long = 100_000_000L): Boolean {
+            if (!file.isFile || file.length() < minBytes) return false
+            return runCatching {
+                file.inputStream().buffered().use { input ->
+                    val magic = ByteArray(4); if (input.read(magic) != 4) return@runCatching false
+                    magic.toString(Charsets.US_ASCII) == "GGUF"
+                }
+            }.getOrDefault(false)
+        }
         fun verify(file: File): Boolean {
             if (file.length() != MODEL_BYTES) return false
             val digest = MessageDigest.getInstance("SHA-256")

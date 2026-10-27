@@ -53,20 +53,28 @@ object StudioJobs {
         try { task(service.applicationContext) }
         catch (_: CancellationException) { update("Stopped. Completed projects are in your library.") }
         catch (e: Exception) { reportFailure(e.message ?: "The task could not finish.") }
-        finally { generation.finish(); busy = false; progress = -1; revision++; service.finishJob(); scheduleModelRelease(MODEL_IDLE_MS) }
+        finally { generation.finish(); busy = false; progress = -1; revision++; service.finishJob(); scheduleModelRelease(service.applicationContext) }
     }
-    // The model (~0.5 GB) stays loaded briefly so follow-up chunk edits skip the reload,
-    // then is freed. Release runs on the job thread so it never races a synthesis.
+    // Model stays loaded briefly so follow-up chunk edits skip the reload, then is freed.
+    // High-RAM phones (Z Fold 5 12 GB) keep it warm 5 min; 6 GB phones free after 90 s.
     private const val MODEL_IDLE_MS = 90_000L
+    private const val MODEL_IDLE_HIGH_RAM_MS = 300_000L
     @Volatile private var releaseRequest = 0
     private val releaseTimer = Handler(Looper.getMainLooper())
+    fun idleMs(context: Context): Long = if (DeviceProfile.of(context).highRam) MODEL_IDLE_HIGH_RAM_MS else MODEL_IDLE_MS
     fun scheduleModelRelease(delayMs: Long) {
         val request = ++releaseRequest
         releaseTimer.postDelayed({ executor.execute { if (!busy && request == releaseRequest) NativeEngine.release() } }, delayMs)
     }
+    fun scheduleModelRelease(context: Context) = scheduleModelRelease(idleMs(context))
     fun checkStop() { if (stop) throw CancellationException() }
     fun download(context: Context) {
         val store = StudioStore(context); store.model.parentFile!!.mkdirs()
+        if (store.modelId == StudioStore.MODEL_ID_VOXCPM2) {
+            // No pinned VoxCPM2 download yet: user exports GGUF from openbmb/VoxCPM2
+            // (vendor/scripts/export_quantized_weights.sh) and imports it in Settings.
+            throw IllegalStateException("Unduhan VoxCPM2 belum tersedia. Ekspor GGUF dari openbmb/VoxCPM2 lalu gunakan Impor File Model.")
+        }
         require(store.model.parentFile!!.usableSpace > StudioStore.MODEL_BYTES + 150_000_000) { "Free at least 650 MB of storage first." }
         val temp = File(store.model.parentFile,"download.part")
         val connection = URL(StudioStore.MODEL_URL).openConnection() as HttpURLConnection
@@ -166,8 +174,9 @@ object StudioJobs {
     }
     /** Refuse to start when the phone is already short of memory, instead of being killed mid-chunk. */
     private fun requireMemory(context: Context) {
+        val p = DeviceProfile.of(context)
         val info=ActivityManager.MemoryInfo();(context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
-        require(info.availMem>700L*1024*1024 || NativeEngine.modelLoaded) { "Not enough free memory to load the speech model (${info.availMem/1048576} MB free). Close other apps and try again." }
+        require(info.availMem>p.minFreeMemMb*1024*1024 || NativeEngine.modelLoaded) { "Memori bebas kurang (${info.availMem/1048576} MB). Tutup aplikasi lain dan coba lagi." }
     }
     private fun requireSpace(store: StudioStore) {
         require(store.projects.usableSpace>64L*1024*1024) { "Your phone is almost out of storage. Free at least 64 MB, then try again." }
@@ -176,9 +185,12 @@ object StudioJobs {
         val temp = File(dir,"section-$index.part.wav")
         val start = SystemClock.elapsedRealtime()
         sectionLabel = status.removeSuffix("…")
-        val cache=NarrationCache(File(store.context.cacheDir,"narration-cache"))
+        val profile = DeviceProfile.of(store.context)
+        val cache=NarrationCache(File(store.context.cacheDir,"narration-cache"), profile.cacheMb*1024L*1024L)
         val reference=if(voice) File(dir,"reference.wav") else null
-        val key=cache.key(text,transcript,reference,"${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${NativeCpuEngine.fast}:$steps:${store.prefs.getInt("threads",NativeCpuEngine.defaultThreads)}")
+        val threads = DeviceProfile.clampThreads(store.context, store.prefs.getInt("threads",profile.defaultThreads))
+            .coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(8))
+        val key=cache.key(IndonesianText.normalize(text),transcript,reference,"${store.modelId}:${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${NativeCpuEngine.fast}:$steps:$threads")
         if(reuse && cache.restore(key,temp)) {
             check(temp.renameTo(File(dir,"section-$index.wav")))
             File(dir,"timing-$index.txt").writeText("cache_hit=true\ngeneration_ms=${SystemClock.elapsedRealtime()-start}\n")
@@ -187,7 +199,7 @@ object StudioJobs {
         nativeActive = true
         val error = try {
             NativeEngine.synthesize(store.model.absolutePath,if (voice) File(dir,"reference.wav").absolutePath else null,
-                if (voice) transcript else null,text,temp.absolutePath,steps,store.prefs.getInt("threads",NativeCpuEngine.defaultThreads).coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(4)))
+                if (voice) transcript else null,IndonesianText.normalize(text),temp.absolutePath,steps,threads)
         } finally { nativeActive=false }
         val nativeMs=SystemClock.elapsedRealtime()-start
         val modelReused=NativeEngine.lastRunReusedModel
@@ -201,11 +213,11 @@ object StudioJobs {
         }
         require(error.isBlank()) { error }
         val wave = AudioFiles.read(temp)
-        require(wave.samples.isNotEmpty() && wave.rate == 16000) { "Model returned invalid audio." }
+        require(wave.samples.isNotEmpty() && wave.rate in 8000..96000 && wave.channels == 1) { "Model mengembalikan audio yang tidak valid." }
         check(temp.renameTo(File(dir,"section-$index.wav"))) { "Could not save section." }
         cache.save(key,File(dir,"section-$index.wav"))
         val stageTimes = generation.snapshot().stageTimes.entries.joinToString("\n") { "${it.key}=${it.value}" }
-        File(dir,"timing-$index.txt").writeText("generation_ms=${SystemClock.elapsedRealtime()-start}\naudio_seconds=${wave.seconds}\nnative_rate=16000\nnative_ms=$nativeMs\nvalidation_ms=${SystemClock.elapsedRealtime()-start-nativeMs}\nmodel_reused=$modelReused\n$stageTimes\n")
+        File(dir,"timing-$index.txt").writeText("generation_ms=${SystemClock.elapsedRealtime()-start}\naudio_seconds=${wave.seconds}\nnative_rate=${wave.rate}\nnative_ms=$nativeMs\nvalidation_ms=${SystemClock.elapsedRealtime()-start-nativeMs}\nmodel_reused=$modelReused\nmodel=${store.modelId}\nthreads=$threads\n$stageTimes\n")
     }
     fun assemble(context: Context, dir: File) {
         val count=StudioStore(context).metadata(dir).getJSONArray("sections").length()

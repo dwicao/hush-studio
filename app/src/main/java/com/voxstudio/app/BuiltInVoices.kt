@@ -19,7 +19,7 @@ object BuiltInVoices {
     }
     fun accentName(code: String) = when (code) {
         "US" -> "American"; "UK" -> "British"; "AU" -> "Australian"; "IE" -> "Irish"
-        "ZA" -> "South African"; "IN" -> "Indian"; else -> code
+        "ZA" -> "South African"; "IN" -> "Indian"; "ID" -> "Indonesia"; else -> code
     }
     fun parse(json: String): List<Entry> {
         val voices = JSONObject(json).getJSONArray("voices")

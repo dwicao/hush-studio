@@ -342,8 +342,8 @@ class MainActivity : Activity() {
         ui.groupRow(settings,selectedVoiceName,voiceDescription(selectedVoice),leading=voiceAvatar(selectedVoice),chevron=true,
             description="Voice: $selectedVoiceName. Change voice") { voiceEditor=false;navigate("Voices") }
         ui.groupRow(settings,"Quality",value=qualityName(store.prefs.getInt("steps",6)),chevron=true) { chooseQuality { draw() } }
-        ui.sectionHeader(content,"Script",ui.footnote("Saved automatically"))
-        val script=field(content,"Write or paste your English script…",store.prefs.getString("script","") ?: "",8,"script")
+        ui.sectionHeader(content,"Script",ui.footnote("Tersimpan otomatis"))
+        val script=field(content,"Tulis atau tempel naskah Bahasa Indonesia…",store.prefs.getString("script","") ?: "",8,"script")
         script.contentDescription="Script";script.filters=arrayOf(InputFilter.LengthFilter(6000))
         val count=ui.footnote("").apply { setPadding(dp(16),dp(7),dp(16),0) };content.addView(count)
         fun updateCount() {
@@ -632,11 +632,21 @@ class MainActivity : Activity() {
         statusCard()
         ui.sectionHeader(content,"Speech Model")
         val model=ui.group(content)
-        ui.groupRow(model,"Status",trailing=ui.text(if(store.ready) "Ready" else "Not Installed",17f,if(store.ready) Palette.success else muted))
+        ui.groupRow(model,"Status",trailing=ui.text(if(store.ready) "Siap" else "Belum terpasang",17f,if(store.ready) Palette.success else muted))
+        ui.groupRow(model,"Model",value=if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) "VoxCPM2 · 48 kHz (Beta ID)" else "VoxCPM 0.5B · Q4",chevron=true) {
+            val ids=arrayOf(StudioStore.MODEL_ID_05B,StudioStore.MODEL_ID_VOXCPM2)
+            val names=arrayOf("VoxCPM 0.5B · Q4 (stabil)","VoxCPM2 · Beta Indonesia (impor manual)")
+            AlertDialog.Builder(this).setTitle("Model Ucapan")
+                .setSingleChoiceItems(names,ids.indexOf(store.modelId)) { dialog,which ->
+                    store.prefs.edit().putString("modelId",ids[which]).putBoolean("modelVerified",false).apply()
+                    NativeEngine.release();dialog.dismiss();draw()
+                }.setNegativeButton("Batal",null).show()
+        }
         if(store.ready) ui.groupRow(model,"Manage Model Files",chevron=true) { manageSpeechModel() }
         else {
             ui.groupRow(model,"Download Model","About 500 MB · needs 650 MB free",titleColor=accent) { safely { startJob("Connecting to model host…",true) { StudioJobs.download(it) } } }
             ui.groupRow(model,"Import Model File",titleColor=accent) { safely { chooseFile(42,"*/*") } }
+            if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) ui.groupRow(model,"Import VoxCPM2 GGUF","Ekspor dari openbmb/VoxCPM2 lalu impor",titleColor=accent) { safely { chooseFile(42,"*/*") } }
         }
         ui.sectionFooter(content,"Voice cloning, transcription and narration run entirely on this phone.")
         ui.sectionHeader(content,"Defaults")
@@ -644,10 +654,11 @@ class MainActivity : Activity() {
         ui.sectionFooter(content,"Fast Preview is for drafts. Choose Best Quality if words sound blurred.")
         ui.sectionHeader(content,"Performance")
         val performance=ui.group(content)
-        val threads=store.prefs.getInt("threads",NativeCpuEngine.defaultThreads)
+        val devProfile=DeviceProfile.of(this)
+        val threads=DeviceProfile.clampThreads(this,store.prefs.getInt("threads",devProfile.defaultThreads))
         ui.groupRow(performance,"CPU Threads",value=threads.toString(),chevron=true) {
-            val values=listOf(2,4)
-            AlertDialog.Builder(this).setTitle("CPU Threads").setSingleChoiceItems(values.map { "$it threads${if(it==NativeCpuEngine.defaultThreads) " (recommended)" else ""}" }.toTypedArray(),values.indexOf(threads)) { dialog,index ->
+            val values=devProfile.threadOptions
+            AlertDialog.Builder(this).setTitle("CPU Threads").setSingleChoiceItems(values.map { "$it threads${if(it==devProfile.defaultThreads) " (disarankan ${devProfile.totalMemMb/1024} GB)" else ""}" }.toTypedArray(),values.indexOf(threads)) { dialog,index ->
                 store.prefs.edit().putInt("threads",values[index]).apply();dialog.dismiss();draw()
             }.setNegativeButton("Cancel",null).show()
         }
@@ -670,7 +681,8 @@ class MainActivity : Activity() {
         ui.groupRow(device,"Model",value="${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}")
         ui.groupRow(device,"Memory",value="${"%.1f".format(info.totalMem/1073741824.0)} GB")
         ui.groupRow(device,"Engine",value=if(NativeCpuEngine.fast) "Accelerated CPU" else if(NativeCpuEngine.available) "Compatible CPU" else "Unsupported")
-        ui.groupRow(device,"Speech Model",value="VoxCPM 0.5B · Q4")
+        ui.groupRow(device,"Speech Model",value=if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) "VoxCPM2 · 48 kHz (Beta)" else "VoxCPM 0.5B · Q4")
+        ui.groupRow(device,"Cache",value="${devProfile.cacheMb} MB · idle ${devProfile.modelIdleMs/60000} min")
         ui.sectionHeader(content,"Privacy")
         val privacy=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(14)) }
         privacy.addView(ui.subhead("Samples, transcripts and narrations stay on this phone unless you export them. The internet is used to download the speech model and, only if you choose to report a narration, to send that report. Uninstalling removes your voices and narrations, so export anything you want to keep.",ink))
@@ -769,10 +781,18 @@ class MainActivity : Activity() {
             42 -> safely { startJob("Importing and verifying model…",true) { context ->
                 val s=StudioStore(context); s.model.parentFile!!.mkdirs(); val temp=File(s.model.parentFile,"import.part")
                 try {
-                    require(s.model.parentFile!!.usableSpace>StudioStore.MODEL_BYTES+100_000_000) { "Free at least 650 MB of storage first." }
-                    copyBounded(context,uri,temp,StudioStore.MODEL_BYTES)
-                    StudioJobs.checkStop(); require(StudioStore.verify(temp)) { "Choose the exact voxcpm-0.5b-q4_k.gguf model from the documented source." }
-                    check(temp.renameTo(s.model)); s.prefs.edit().putBoolean("modelVerified",true).apply(); StudioJobs.update("Model installed · ready for offline generation")
+                    if(s.modelId==StudioStore.MODEL_ID_VOXCPM2) {
+                        // Beta path: accept any GGUF (export from openbmb/VoxCPM2), verified by magic + size.
+                        require(s.model.parentFile!!.usableSpace>3L*1024*1024*1024) { "Siapkan minimal 3 GB untuk model VoxCPM2." }
+                        copyBounded(context,uri,temp,6L*1024*1024*1024)
+                        StudioJobs.checkStop(); require(StudioStore.looksLikeGguf(temp,500_000_000L)) { "Pilih file GGUF VoxCPM2 yang valid (ekspor dari openbmb/VoxCPM2)." }
+                        check(temp.renameTo(s.model)); s.prefs.edit().putBoolean("modelVerified",true).apply(); StudioJobs.update("Model VoxCPM2 terpasang · siap untuk Bahasa Indonesia")
+                    } else {
+                        require(s.model.parentFile!!.usableSpace>StudioStore.MODEL_BYTES+100_000_000) { "Free at least 650 MB of storage first." }
+                        copyBounded(context,uri,temp,StudioStore.MODEL_BYTES)
+                        StudioJobs.checkStop(); require(StudioStore.verify(temp)) { "Choose the exact voxcpm-0.5b-q4_k.gguf model from the documented source." }
+                        check(temp.renameTo(s.model)); s.prefs.edit().putBoolean("modelVerified",true).apply(); StudioJobs.update("Model installed · ready for offline generation")
+                    }
                 } finally { temp.delete() }
             } }
             43 -> {

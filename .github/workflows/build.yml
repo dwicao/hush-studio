@@ -1,0 +1,149 @@
+# CI: unit tests on every push/PR, signed APKs on every build,
+# GitHub Release upload on version tags (v*).
+#
+# Release APKs are signed with the public AOSP testkey (see
+# scripts/make-testkey-keystore.sh) and published as PRE-RELEASES for testing
+# only. They cannot update Play-signed installs. Play releases keep using the
+# dedicated release key described in docs/play-console.md.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+
+jobs:
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: "**/build/reports/tests/"
+
+  build:
+    name: Build signed APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK + NDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" \
+            "ndk;28.2.13676358" "cmake;3.22.1"
+
+      - name: Make AOSP testkey keystore (test signing only)
+        run: ./scripts/make-testkey-keystore.sh "$GITHUB_WORKSPACE"
+
+      - name: Build debug + release APKs
+        run: ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK signatures
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs \
+            app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs \
+            app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload release APK (AOSP testkey signed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-release-testkey
+          path: app/build/outputs/apk/release/app-release.apk
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [unit-test, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          merge-multiple: true
+          path: dist
+
+      - name: Rename with version tag
+        run: |
+          ls -la dist
+          cp dist/app-debug.apk "dist/hush-studio-${GITHUB_REF_NAME}-debug.apk"
+          cp dist/app-release.apk "dist/hush-studio-${GITHUB_REF_NAME}-testkey.apk"
+
+      - name: Publish pre-release (testkey signed)
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            dist/hush-studio-${{ github.ref_name }}-debug.apk
+            dist/hush-studio-${{ github.ref_name }}-testkey.apk
+          body: |
+            ## Hush Studio ${{ github.ref_name }} — test build (Bahasa Indonesia beta)
+
+            > ⚠️ Signed with the public **AOSP testkey, for testing only**.
+            > This build **cannot update** Play-signed installs (and vice versa).
+            > Uninstall any other Hush Studio build first if signatures clash.
+
+            - Offline TTS (VoxCPM 0.5B, 500 MB model downloaded once in Settings).
+            - Optimasi Bahasa Indonesia: normalisasi angka/singkatan, pemisah kalimat ID,
+              UI Indonesia, dukungan Beta impor GGUF VoxCPM2 (48 kHz) untuk kualitas ID native.
+            - Disetel untuk HP 12 GB (6 threads, cache 128 MB, model warm 5 mnt).
+            - Butuh Android 9+, ARM64, ~650 MB ruang untuk model.
+
+            Cara pasang: unduh `*-testkey.apk`, izinkan instal dari browser/file manager,
+            lalu buka Settings > Speech Model untuk mengunduh model.
