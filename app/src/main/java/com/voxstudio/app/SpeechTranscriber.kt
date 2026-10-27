@@ -31,6 +31,7 @@ object SpeechTranscriber {
             if (ID_MODEL_SHA.isBlank()) return false
             return runCatching {
                 context.assets.open("speech-model-id.zip").use { it.close() }
+                true
             }.getOrDefault(false)
         }
         return true
