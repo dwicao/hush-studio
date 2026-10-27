@@ -296,6 +296,11 @@ Adding or replacing a built-in voice:
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
 assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
 
+0.1.23 — STALL MESSAGE WITH STAGE DURATION
+- Progress stall note now shows how long the current native stage itself has run
+  (e.g. tahap 'Preparing speech' 4m), so hang reports pin the phase precisely.
+- Version bumped to 0.1.23 (code 24).
+
 0.1.22 — PROPER DIAGNOSTICS LOGGING
 - New AppLog: thread-safe ring buffer (400 lines) + bounded session file
   (2 MB, newest 3 in app-private logs/), absolute paths scrubbed, uncaught

@@ -298,7 +298,7 @@ class MainActivity : Activity() {
         val stall=StudioJobs.stallInfo()
         val summary = if(s.total>0) {
             val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)} s of audio" else ""
-            val stallNote=if(stall!=null) " · tanpa update native $stall — masih jalan atau macet" else ""
+            val stallNote=if(stall!=null) " · tanpa update native $stall (tahap '${s.stage.ifBlank { "?" }}' ${GenerationProgress.Snapshot.duration(s.stageElapsedMs)}) — masih jalan atau macet" else ""
             "${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech$stallNote · ${s.completed} of ${s.total} chunks done"
         } else if (stall!=null) "Tanpa update native $stall — masih jalan atau macet, Stop tetap bisa dipakai" else ""
         timingText?.visibility=if(summary.isEmpty()) View.GONE else View.VISIBLE

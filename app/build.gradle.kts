@@ -24,8 +24,8 @@ android {
         applicationId = "com.orailnoor.hush"
         minSdk = 28
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.1.22"
+        versionCode = 24
+        versionName = "0.1.23"
         buildConfigField("String", "REPORT_PROJECT_ID", "\"$reportProjectId\"")
         buildConfigField("String", "REPORT_API_KEY", "\"$reportApiKey\"")
         ndk { abiFilters += "arm64-v8a" }
