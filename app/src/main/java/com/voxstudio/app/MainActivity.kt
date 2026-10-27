@@ -362,13 +362,16 @@ class MainActivity : Activity() {
         title.filters=arrayOf(InputFilter.LengthFilter(80));title.contentDescription="Project title, optional"
         ui.sectionFooter(content,"Leave blank to use the first words of your script.")
         footerReady={ !store.ready || script.text.isNotBlank() }
-        footerMessage={ when { !store.ready -> "Finish the one-time setup to start creating.";script.text.isBlank() -> "Add your script to get started.";else -> "$selectedVoiceName · ${qualityName(store.prefs.getInt("steps",6))}" } }
+        footerMessage={ when { !store.ready -> "Finish the one-time setup to start creating.";script.text.isBlank() -> "Add your script to get started.";
+            store.modelId==StudioStore.MODEL_ID_VOXCPM2 -> "$selectedVoiceName · ${qualityName(store.prefs.getInt("steps",6))} · model 2B: chunk pertama bisa belasan menit";
+            else -> "$selectedVoiceName · ${qualityName(store.prefs.getInt("steps",6))}" } }
         generateSpeechAction={
             if(!store.ready) navigate("Settings") else {
-                val text=script.text.toString();ScriptSections.split(text)
+                val limit=ChunkProjects.limitFor(store.modelId)
+                val text=script.text.toString();ScriptSections.split(text, limit)
                 val voiceId=store.selectedVoice?.id
                 stopPlayback()
-                val dir=ChunkProjects.create(this,text,title.text.toString(),voiceId,store.prefs.getInt("steps",6))
+                val dir=ChunkProjects.create(this,text,title.text.toString(),voiceId,store.prefs.getInt("steps",6),limit)
                 openStudio(dir,autoGenerate=true)
             }
         }

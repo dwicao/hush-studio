@@ -218,7 +218,7 @@ class ChunkStudioDialog(private val activity: Activity,private val dir: File,
             }
             document.addView(card,LinearLayout.LayoutParams(-1,-2));gap(document,10)
         }
-        document.addView(text("Blank lines in your script start a new chunk. Long paragraphs are split at about 220 characters so each chunk stays within what the model handles well.",12f,Palette.muted).apply { setPadding(dp(4),dp(8),dp(4),0) })
+        document.addView(text("Blank lines in your script start a new chunk. Long paragraphs are split at about ${ChunkProjects.limitFor(store.modelId)} characters so each chunk stays within what the model handles well.",12f,Palette.muted).apply { setPadding(dp(4),dp(8),dp(4),0) })
         scroll.post { scroll.scrollTo(0,y) }
     }
     private fun generate(indices: List<Int>,fresh: Boolean) {

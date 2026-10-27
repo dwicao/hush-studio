@@ -17,6 +17,15 @@ class ChunkProjectsTest {
         assertTrue(chunks.all { it.length<=220 })
         assertEquals(List(12) { sentence }.joinToString(" "),chunks.joinToString(" "))
     }
+    @Test fun voxCPM2UsesShorterChunks() {
+        assertEquals(140, ChunkProjects.limitFor(StudioStore.MODEL_ID_VOXCPM2))
+        assertEquals(220, ChunkProjects.limitFor(StudioStore.MODEL_ID_05B))
+        val text = List(6) { "Kalimat percobaan untuk VoxCPM2." }.joinToString(" ")
+        val short = ChunkProjects.split(text, ChunkProjects.limitFor(StudioStore.MODEL_ID_VOXCPM2))
+        assertTrue(short.size > 1)
+        assertTrue(short.all { it.length <= 140 })
+        assertEquals(text, short.joinToString(" "))
+    }
     @Test fun pruneKeepsOnlyThreeNewestTakesForThatChunk() {
         val dir=Files.createTempDirectory("takes").toFile()
         try {

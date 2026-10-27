@@ -7,19 +7,24 @@ import java.io.File
 import java.util.UUID
 
 object ChunkProjects {
-    /** Paragraphs (blank-line separated) become chunks; long ones are packed sentence-wise up to 220 characters. */
-    fun split(text: String): List<String> = text.trim().split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }.flatMap { paragraph ->
-        val pieces=ScriptSections.split(paragraph)
+    /** VoxCPM2 (2B) decodes far slower per token than 0.5B and its stop prediction is
+     * still preliminary upstream, so worst-case decode grows with chunk length.
+     * Shorter chunks bound that worst case and keep progress visible. */
+    fun limitFor(modelId: String) = if (modelId == StudioStore.MODEL_ID_VOXCPM2) 140 else 220
+    /** Paragraphs (blank-line separated) become chunks; long ones are packed sentence-wise up to [limit] characters. */
+    fun split(text: String, limit: Int = 220): List<String> = text.trim().split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }.flatMap { paragraph ->
+        val pieces=ScriptSections.split(paragraph, limit)
         val grouped=mutableListOf<String>()
         for(piece in pieces) {
-            if(grouped.isNotEmpty() && grouped.last().length+piece.length+1<=220) grouped[grouped.lastIndex]+=" "+piece
+            if(grouped.isNotEmpty() && grouped.last().length+piece.length+1<=limit) grouped[grouped.lastIndex]+=" "+piece
             else grouped.add(piece)
         };grouped
     }
-    fun create(context: Context,text: String,title: String,voiceId: String?,steps: Int): File {
+    fun create(context: Context,text: String,title: String,voiceId: String?,steps: Int,limit: Int = 220): File {
         val store=StudioStore(context)
         require(text.isNotBlank() && text.length<=6000) { "Add a script up to 6,000 characters." }
-        val chunks=split(text)
+        require(limit in 32..220) { "Invalid chunk size." }
+        val chunks=split(text, limit)
         val voice=if(voiceId.isNullOrBlank()) null else store.findVoice(voiceId) ?: error("Choose an available voice.")
         val dir=File(store.projects,UUID.randomUUID().toString()).also { check(it.mkdirs()) }
         try {

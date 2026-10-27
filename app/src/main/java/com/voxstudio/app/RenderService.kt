@@ -123,7 +123,7 @@ object StudioJobs {
     fun generate(context: Context, script: String, title: String, voiceId: String?, steps: Int) {
         val store = StudioStore(context)
         require(store.ready) { "Install the model in Setup first." }
-        val parts = ScriptSections.split(script)
+        val parts = ScriptSections.split(script, ChunkProjects.limitFor(store.modelId))
         generation.startProject(parts.size)
         val savedVoice=if(voiceId==null) null else store.findVoice(voiceId) ?: error("Choose an available voice.")
         val useVoice=savedVoice!=null
