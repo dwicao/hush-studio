@@ -77,6 +77,14 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLog.init(filesDir, BuildConfig.VERSION_NAME)
+        AppLog.installUncaughtHandler()
+        val dev = DeviceProfile.of(this)
+        val prefs0 = getSharedPreferences("studio", MODE_PRIVATE)
+        AppLog.i("device", "model=${Build.MANUFACTURER} ${Build.MODEL} ram=${dev.totalMemMb}MB cores=${dev.cores} " +
+            "highRam=${dev.highRam} engine=${if(NativeCpuEngine.fast) "fast" else if(NativeCpuEngine.available) "compat" else "none"} " +
+            "threads=${DeviceProfile.clampThreads(this, prefs0.getInt("threads", dev.defaultThreads))} " +
+            "modelId=${prefs0.getString("modelId", StudioStore.MODEL_ID_05B)}")
         Palette.update(this)
         store = StudioStore(applicationContext)
         referenceStamp=store.reference.lastModified()
@@ -287,10 +295,12 @@ class MainActivity : Activity() {
         if(jobText?.text?.toString()!=status) jobText?.text=status
         val s=StudioJobs.generation.snapshot()
         val native=StudioJobs.nativeActive
+        val stall=StudioJobs.stallInfo()
         val summary = if(s.total>0) {
             val speech=if(s.frames>0) " · ${"%.1f".format(s.audioSeconds)} s of audio" else ""
-            "${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech · ${s.completed} of ${s.total} chunks done"
-        } else ""
+            val stallNote=if(stall!=null) " · tanpa update native $stall — masih jalan atau macet" else ""
+            "${s.stage.ifEmpty { "Starting" }} · ${s.elapsed} elapsed$speech$stallNote · ${s.completed} of ${s.total} chunks done"
+        } else if (stall!=null) "Tanpa update native $stall — masih jalan atau macet, Stop tetap bisa dipakai" else ""
         timingText?.visibility=if(summary.isEmpty()) View.GONE else View.VISIBLE
         if(timingText?.text?.toString()!=summary) timingText?.text=summary
         progressBar?.max=if(native) 5 else 100
@@ -698,6 +708,20 @@ class MainActivity : Activity() {
         ui.groupRow(device,"Engine",value=if(NativeCpuEngine.fast) "Accelerated CPU" else if(NativeCpuEngine.available) "Compatible CPU" else "Unsupported")
         ui.groupRow(device,"Speech Model",value=if(store.modelId==StudioStore.MODEL_ID_VOXCPM2) "VoxCPM2 · 48 kHz (Beta)" else "VoxCPM 0.5B · Q4")
         ui.groupRow(device,"Cache",value="${devProfile.cacheMb} MB · idle ${devProfile.modelIdleMs/60000} min")
+        ui.sectionHeader(content,"Diagnostics")
+        val diag=ui.group(content)
+        ui.groupRow(diag,"Lihat Log",value="${AppLog.fileSize()/1024} KB",chevron=true) { safely {
+            val textView=ui.text(AppLog.tail(200).ifBlank { "(log masih kosong)" },12f)
+            textView.setPadding(dp(16),dp(12),dp(16),dp(12));textView.setTextIsSelectable(true)
+            AlertDialog.Builder(this).setTitle("Log Diagnostik").setView(ScrollView(this).apply { addView(textView) }).setPositiveButton("Tutup",null).show()
+        } }
+        ui.groupRow(diag,"Ekspor Log","Kirim file ke developer saat ada masalah",chevron=true) { safely {
+            require(!StudioJobs.busy) { "Tunggu task selesai sebelum mengekspor log." }
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type="text/plain"; putExtra(Intent.EXTRA_TITLE,"hush-studio-log.txt")
+            },44)
+        } }
+        ui.sectionFooter(content,"Log hanya berisi tahap, durasi dan error teknis — tanpa isi naskah, transkrip atau nama voice.")
         ui.sectionHeader(content,"Privacy")
         val privacy=ui.group(content).apply { setPadding(dp(16),dp(14),dp(16),dp(14)) }
         privacy.addView(ui.subhead("Samples, transcripts and narrations stay on this phone unless you export them. The internet is used to download the speech model and, only if you choose to report a narration, to send that report. Uninstalling removes your voices and narrations, so export anything you want to keep.",ink))
@@ -826,6 +850,15 @@ class MainActivity : Activity() {
                         contentResolver.openOutputStream(uri,"wt")!!.use { output -> AudioFiles.writeLabeled(source,output,AudioFiles.aiLabel(title)) }
                         runOnUiThread { toast("WAV exported, labelled as AI-generated") }
                     } catch(e: Exception) { StudioJobs.reportFailure(e.message ?: "Export failed. Please try another location.");runOnUiThread { draw() } }
+                }
+            }
+            44 -> {
+                io.execute {
+                    try {
+                        val bytes=AppLog.exportText().toByteArray(Charsets.UTF_8)
+                        contentResolver.openOutputStream(uri,"wt")!!.use { it.write(bytes) }
+                        runOnUiThread { toast("Log diekspor (${bytes.size/1024} KB)") }
+                    } catch(e: Exception) { runOnUiThread { toast(e.message ?: "Ekspor log gagal.") } }
                 }
             }
         }

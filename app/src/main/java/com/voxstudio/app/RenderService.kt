@@ -25,9 +25,16 @@ object StudioJobs {
     @Volatile var revision = 0; private set
     @Volatile var lastProject: String? = null; private set
     @Volatile var lastError: String? = null; private set
+    @Volatile var lastProgressAt = SystemClock.elapsedRealtime(); private set
+    @Volatile private var lastStage = ""
+    @Volatile private var lastHeartbeat = 0L
+    @Volatile private var stallWarned = false
     @Volatile private var sectionLabel = "Generating audio"
     @Volatile private var pending: ((Context) -> Unit)? = null
     @Synchronized fun submit(context: Context, label: String, transfer: Boolean = false, task: (Context) -> Unit) {
+        check(!busy) { "Wait for the current task to finish." }
+        AppLog.i("job", "submit: $label")
+        lastProgressAt = SystemClock.elapsedRealtime(); lastStage = ""; lastHeartbeat = 0L; stallWarned = false
         check(!busy) { "Wait for the current task to finish." }
         generation.reset()
         lastError=null; busy = true; stop = false; isTransfer = transfer; status = label; progress = -1; revision++
@@ -38,20 +45,43 @@ object StudioJobs {
     @Synchronized fun takeTask(): ((Context) -> Unit)? = pending.also { pending = null }
     fun cancel() {
         stop = true
+        AppLog.i("job", "cancel requested")
         if (nativeActive) NativeEngine.cancel()
         update(if (isTransfer) "Cancelling task…" else "Stop requested · finishing current operation…")
     }
     fun nativeProgress(stage: String, current: Int, total: Int, audioSeconds: Double) {
+        val now = SystemClock.elapsedRealtime()
+        lastProgressAt = now; stallWarned = false
+        if (stage != lastStage) {
+            lastStage = stage; lastHeartbeat = now
+            AppLog.i("native", "stage: $stage")
+        } else if (now - lastHeartbeat > 60_000) {
+            lastHeartbeat = now
+            val s = generation.snapshot()
+            AppLog.i("native", "$stage update: chunk ${s.completed + 1}/${s.total}, step $current/$total, ${"%.1f".format(audioSeconds)}s audio")
+        }
         generation.stage(stage,current,audioSeconds)
         update("$sectionLabel\n$stage · stage ${generation.snapshot().stageNumber} of 5")
     }
-    fun reportFailure(message: String) { lastError=message.take(350);update(lastError!!) }
+    /** Non-null while a task runs with no native callback for 90+ seconds: still
+     * working on a heavy step, or hung. Never auto-cancels; the user decides. */
+    fun stallInfo(): String? {
+        if (!busy) return null
+        val gap = SystemClock.elapsedRealtime() - lastProgressAt
+        if (gap < 90_000) return null
+        if (!stallWarned) {
+            stallWarned = true
+            AppLog.w("native", "no callback for ${gap / 60000}m during '${generation.snapshot().stage.ifBlank { "unknown stage" }}'")
+        }
+        return "${gap / 60000}m"
+    }
+    fun reportFailure(message: String) { lastError=message.take(350); AppLog.e("job", "failure: $lastError"); update(lastError!!) }
     fun dismissError() { lastError=null;revision++ }
     fun update(message: String, percent: Int = -1) { status = message; progress = percent; revision++ }
     fun run(service: RenderService, task: (Context) -> Unit) = executor.execute {
         releaseRequest++
-        try { task(service.applicationContext) }
-        catch (_: CancellationException) { update("Stopped. Completed projects are in your library.") }
+        try { task(service.applicationContext); AppLog.i("job", "done") }
+        catch (_: CancellationException) { AppLog.i("job", "stopped by user"); update("Stopped. Completed projects are in your library.") }
         catch (e: Exception) { reportFailure(e.message ?: "The task could not finish.") }
         finally { generation.finish(); busy = false; progress = -1; revision++; service.finishJob(); scheduleModelRelease(service.applicationContext) }
     }
@@ -212,10 +242,12 @@ object StudioJobs {
         val reference=if(voice) File(dir,"reference.wav") else null
         val threads = DeviceProfile.clampThreads(store.context, store.prefs.getInt("threads",profile.defaultThreads))
             .coerceIn(1,Runtime.getRuntime().availableProcessors().coerceAtMost(8))
+        AppLog.i("render", "chunk $index start model=${store.modelId} steps=$steps threads=$threads textLen=${IndonesianText.normalize(text).length} voice=$voice")
         val key=cache.key(IndonesianText.normalize(text),transcript,reference,"${store.modelId}:${StudioStore.MODEL_SHA}:${BuildConfig.VERSION_NAME}:engine2:${NativeCpuEngine.fast}:$steps:$threads")
         if(reuse && cache.restore(key,temp)) {
             check(temp.renameTo(File(dir,"section-$index.wav")))
             File(dir,"timing-$index.txt").writeText("cache_hit=true\ngeneration_ms=${SystemClock.elapsedRealtime()-start}\n")
+            AppLog.i("render", "chunk $index cache hit (${SystemClock.elapsedRealtime()-start}ms)")
             return
         }
         nativeActive = true
@@ -223,6 +255,8 @@ object StudioJobs {
             NativeEngine.synthesize(store.model.absolutePath,if (voice) File(dir,"reference.wav").absolutePath else null,
                 if (voice) transcript else null,IndonesianText.normalize(text),temp.absolutePath,steps,threads)
         } finally { nativeActive=false }
+        val nlog = NativeEngine.lastNativeLog()
+        if (nlog.isNotBlank()) AppLog.d("native", "chunk $index tail: ${nlog.takeLast(1500)}")
         val nativeMs=SystemClock.elapsedRealtime()-start
         val modelReused=NativeEngine.lastRunReusedModel
         checkStop()
@@ -243,6 +277,7 @@ object StudioJobs {
         val wave = AudioFiles.read(temp)
         require(wave.samples.isNotEmpty() && wave.rate in 8000..96000 && wave.channels == 1) { "Model mengembalikan audio yang tidak valid." }
         check(temp.renameTo(File(dir,"section-$index.wav"))) { "Could not save section." }
+        AppLog.i("render", "chunk $index done rate=${wave.rate} audio=${"%.1f".format(wave.seconds)}s total=${SystemClock.elapsedRealtime()-start}ms reused=$modelReused")
         cache.save(key,File(dir,"section-$index.wav"))
         val stageTimes = generation.snapshot().stageTimes.entries.joinToString("\n") { "${it.key}=${it.value}" }
         File(dir,"timing-$index.txt").writeText("generation_ms=${SystemClock.elapsedRealtime()-start}\naudio_seconds=${wave.seconds}\nnative_rate=${wave.rate}\nnative_ms=$nativeMs\nvalidation_ms=${SystemClock.elapsedRealtime()-start-nativeMs}\nmodel_reused=$modelReused\nmodel=${store.modelId}\nthreads=$threads\n$stageTimes\n")

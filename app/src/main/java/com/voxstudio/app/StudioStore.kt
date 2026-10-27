@@ -1,6 +1,7 @@
 package com.voxstudio.app
 
 import android.content.Context
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -109,6 +110,8 @@ object NativeEngine {
     fun gpuEnabled(context: Context)=gpuPackaged(context) && context.getSharedPreferences("studio",Context.MODE_PRIVATE).getBoolean("gpuExperimental",false)
     fun synthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String {
         val context=appContext
+        AppLog.i("engine", "synthesize model=${File(model).name} steps=$steps threads=$threads textLen=${text.length} ref=${reference != null}")
+        val t0=SystemClock.elapsedRealtime()
         val prefs=context?.getSharedPreferences("studio",Context.MODE_PRIVATE)
         val tryGpu=context!=null && when(backendForTesting) { "gpu" -> true; "cpu" -> false; else -> !gpuFailed && gpuEnabled(context) }
         if(tryGpu) {
@@ -130,7 +133,15 @@ object NativeEngine {
         val error=NativeCpuEngine.synthesize(model,reference,transcript,text,output,steps,threads)
         // Native code keeps the model after success or a user stop and frees it after other failures.
         modelLoaded=error.isBlank() || error.contains("stopped by user")
+        AppLog.i("engine", "synthesize done ${SystemClock.elapsedRealtime()-t0}ms ok=${error.isBlank()} reused=$modelLoaded" +
+            if (error.isNotBlank()) " err=${error.take(150)}" else "")
         return error
+    }
+    /** Last native stderr tail (stage/timing lines, no script content). Empty when unavailable. */
+    fun lastNativeLog(): String {
+        val cpu = runCatching { if (NativeCpuEngine.available) NativeCpuEngine.lastLog() else "" }.getOrDefault("")
+        if (cpu.isNotBlank()) return cpu
+        return runCatching { if (NativeGpuEngine.available) NativeGpuEngine.lastLog() else "" }.getOrDefault("")
     }
     fun cancel() { if(runningGpu) GpuWorkerClient.cancel() else NativeCpuEngine.cancel() }
     fun setBenchmarkSeedForTesting(seed: Int) {
@@ -162,10 +173,12 @@ object NativeCpuEngine {
     fun cancel() { if (available) nativeCancel() }
     fun release() { if (available) nativeRelease() }
     fun lastRunReusedModel()=available && nativeLastRunReusedModel()
+    fun lastLog(): String = if (available) runCatching { nativeLastLog() }.getOrDefault("") else ""
     private external fun nativeSynthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String
     private external fun nativeCancel()
     private external fun nativeRelease()
     private external fun nativeLastRunReusedModel(): Boolean
+    private external fun nativeLastLog(): String
     // Used only by the repeatable device benchmark. Normal rendering stays stochastic.
     fun setBenchmarkSeedForTesting(seed: Int) { require(available);nativeBenchmarkSeed(seed) }
     private external fun nativeBenchmarkSeed(seed: Int)
@@ -183,9 +196,11 @@ object NativeGpuEngine {
     }
     fun cancel() { if (available) nativeCancel() }
     fun release() { if (available) nativeRelease() }
+    fun lastLog(): String = if (available) runCatching { nativeLastLog() }.getOrDefault("") else ""
     private external fun nativeSynthesize(model: String, reference: String?, transcript: String?, text: String, output: String, steps: Int, threads: Int): String
     private external fun nativeCancel()
     private external fun nativeRelease()
+    private external fun nativeLastLog(): String
     // Used only by the repeatable device benchmark. Normal rendering stays stochastic.
     fun setBenchmarkSeedForTesting(seed: Int) { require(available);nativeBenchmarkSeed(seed) }
     private external fun nativeBenchmarkSeed(seed: Int)

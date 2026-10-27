@@ -9,6 +9,10 @@
 static thread_local JNIEnv* progress_env = nullptr;
 static thread_local jobject progress_receiver = nullptr;
 static thread_local jmethodID progress_method = nullptr;
+// Last run's stderr diagnostics (stage/timing lines; user text is never logged
+// by the pipeline). Kept for the Java-side log file and stall diagnosis.
+static std::string g_last_diagnostics;
+static std::mutex g_diagnostics_mutex;
 static std::atomic<int> benchmark_seed{-1};
 static unsigned int mobile_seed() {
     const int seed = benchmark_seed.exchange(-1);
@@ -86,6 +90,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
     catch (...) { diagnostics << "Native synthesis failed."; }
     std::cerr.rdbuf(previous);
     progress_env = nullptr; progress_receiver = nullptr; progress_method = nullptr;
+    {
+        std::lock_guard<std::mutex> log_lock(g_diagnostics_mutex);
+        g_last_diagnostics = diagnostics.str();
+    }
     // A user stop happens between graph computations, so the loaded model stays valid.
     // Any other failure drops it; the next request reloads from the verified file.
     if (code != 0 && !cancel_requested.load()) voxcpm::mobile_release_session();
@@ -110,6 +118,15 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeS
 extern "C" JNIEXPORT void JNICALL Java_com_voxstudio_app_NativeEngine_nativeRelease(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(synthesis_mutex);
     voxcpm::mobile_release_session();
+}
+
+extern "C" JNIEXPORT jstring JNICALL Java_com_voxstudio_app_NativeEngine_nativeLastLog(JNIEnv* env, jobject) {
+    std::lock_guard<std::mutex> log_lock(g_diagnostics_mutex);
+    std::string tail = g_last_diagnostics.size() > 4000
+        ? g_last_diagnostics.substr(g_last_diagnostics.size() - 4000)
+        : g_last_diagnostics;
+    for (char& c : tail) if (static_cast<unsigned char>(c) > 127) c = '?';
+    return env->NewStringUTF(tail.c_str());
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_com_voxstudio_app_NativeEngine_nativeLastRunReusedModel(JNIEnv*, jobject) {

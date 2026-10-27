@@ -296,6 +296,22 @@ Adding or replacing a built-in voice:
     -e voices <id,...> -e seeds 11,22,33 com.voxstudio.app.dev.test/androidx.test.runner.AndroidJUnitRunner
 assembleRelease fails (checkBuiltInVoices) if any catalog entry is a placeholder or lacks its clip.
 
+0.1.22 — PROPER DIAGNOSTICS LOGGING
+- New AppLog: thread-safe ring buffer (400 lines) + bounded session file
+  (2 MB, newest 3 in app-private logs/), absolute paths scrubbed, uncaught
+  exception breadcrumb. Never logs script text, transcripts or voice names.
+- Lifecycle coverage: job submit/cancel/done/failure, per-chunk start/done
+  (model/steps/threads/duration/rate), native stage transitions + 60 s
+  heartbeats with step/audio counters, engine entry/exit timings, crash hook.
+- Native bridge keeps last stderr tail (4 KB) exposed via nativeLastLog JNI
+  (auto-renamed per engine by CMake); Java stores the tail per chunk.
+- Stall detector: no native callback for 90+ s shows "tanpa update native Xm —
+  masih jalan atau macet" in progress + one warning line in the log. Never
+  auto-cancels; Stop stays available.
+- Settings > Diagnostics: Lihat Log (last 200 lines) and Ekspor Log
+  (hush-studio-log.txt via file picker) for sending to the developer.
+- Version bumped to 0.1.22 (code 23).
+
 0.1.21 — VOXCPM2 SPEED MITIGATION
 - VoxCPM2 chunks capped at 140 chars (vs 220): worst-case native decode
   (max_len = 6x tokens + 10, stop prediction still preliminary) grows with chunk
